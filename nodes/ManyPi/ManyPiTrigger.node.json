@@ -1,0 +1,19 @@
+{
+	"node": "n8n-nodes-manypi.manyPiTrigger",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Sales", "Marketing & Content", "Data & Storage"],
+	"resources": {
+		"credentialDocumentation": [
+			{
+				"url": "https://github.com/manypicom/n8n-nodes-manypi#credentials"
+			}
+		],
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/manypicom/n8n-nodes-manypi#trigger"
+			}
+		]
+	},
+	"alias": ["scraper run", "new lead", "new reply", "agent run", "webhook"]
+}

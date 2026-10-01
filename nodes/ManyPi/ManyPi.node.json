@@ -1,0 +1,29 @@
+{
+	"node": "n8n-nodes-manypi.manyPi",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Sales", "Marketing & Content", "Data & Storage"],
+	"resources": {
+		"credentialDocumentation": [
+			{
+				"url": "https://github.com/manypicom/n8n-nodes-manypi#credentials"
+			}
+		],
+		"primaryDocumentation": [
+			{
+				"url": "https://github.com/manypicom/n8n-nodes-manypi#readme"
+			}
+		]
+	},
+	"alias": [
+		"scraper",
+		"web scraping",
+		"scrape",
+		"lead generation",
+		"leads",
+		"cold email",
+		"outreach",
+		"email verification",
+		"ai agent"
+	]
+}
