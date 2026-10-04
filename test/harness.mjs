@@ -2,6 +2,11 @@
 // compiled nodes in dist/ without a running n8n. Requests are answered by a
 // queue of canned responses and recorded, so tests can assert on both.
 
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { NodeApiError } = require('n8n-workflow');
+
 export function extractParameter(value, options) {
 	if (options?.extractValue && value && typeof value === 'object' && '__rl' in value) {
 		return value.value;
@@ -27,11 +32,19 @@ export function createTransport(responses = []) {
 			throw new Error(`No canned response left for ${request.method} ${request.url}`);
 		}
 		const response = typeof next === 'function' ? next(request) : next;
-		return {
-			statusCode: response.statusCode ?? 200,
-			headers: response.headers ?? {},
-			body: response.body,
-		};
+		const statusCode = response.statusCode ?? 200;
+		const headers = response.headers ?? {};
+		// What n8n does with a status outside 2xx when the request does not ask
+		// to ignore it: axios rejects, and httpRequestWithAuthentication wraps
+		// the rejection in a NodeApiError whose cause still holds the response.
+		if (statusCode >= 300 && !request.ignoreHttpStatusErrors) {
+			const axiosError = Object.assign(new Error(`Request failed with status code ${statusCode}`), {
+				isAxiosError: true,
+				response: { status: statusCode, headers, data: response.body },
+			});
+			throw new NodeApiError(NODE, axiosError);
+		}
+		return { statusCode, headers, body: response.body };
 	};
 	return { calls, httpRequestWithAuthentication, remaining: () => queue.length };
 }

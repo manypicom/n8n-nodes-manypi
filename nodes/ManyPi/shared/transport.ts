@@ -8,11 +8,29 @@ import type {
 	IPollFunctions,
 	JsonObject,
 } from 'n8n-workflow';
-import { NodeApiError } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 export const BASE_URL = 'https://app.manypi.com';
 
+export const API_KEY_CREDENTIAL = 'manyPiApi';
+export const OAUTH2_CREDENTIAL = 'manyPiOAuth2Api';
+
 export type ManyPiContext = IExecuteFunctions | ILoadOptionsFunctions | IPollFunctions;
+
+/** The credential the node's Authentication parameter points at. */
+export function credentialTypeOf(context: ManyPiContext): string {
+	let authentication: unknown;
+	if ('getInputData' in context) {
+		authentication = context.getNodeParameter('authentication', 0, 'apiKey');
+	} else if ('getCurrentNodeParameter' in context) {
+		// List searches run while the node is being edited, so read the value
+		// shown in the editor rather than the last saved one.
+		authentication = context.getCurrentNodeParameter('authentication') ?? 'apiKey';
+	} else {
+		authentication = context.getNodeParameter('authentication', 'apiKey');
+	}
+	return authentication === 'oAuth2' ? OAUTH2_CREDENTIAL : API_KEY_CREDENTIAL;
+}
 
 export interface ManyPiRequestOptions {
 	/** The input item this request belongs to, so errors point at the right row. */
@@ -125,6 +143,7 @@ export function manyPiApiError(
 	path: string,
 	response: ManyPiFullResponse,
 	options: ManyPiRequestOptions,
+	credentialType: string = API_KEY_CREDENTIAL,
 ): NodeApiError {
 	const status = response.statusCode;
 	const said = apiMessage(response.body);
@@ -144,6 +163,13 @@ export function manyPiApiError(
 				: `ManyPI answered with HTTP ${status}${location ? ` and pointed to ${location}` : ''}. Contact ManyPI support if this keeps happening.`;
 			break;
 		}
+		case status === 401 && credentialType === OAUTH2_CREDENTIAL:
+			// n8n has already tried to renew the token by the time a 401 gets here.
+			message = 'ManyPI did not accept the OAuth2 connection';
+			description =
+				'The connection expired or was revoked, and n8n could not renew it. Open the ManyPI OAuth2 credential and reconnect your account.' +
+				saidSuffix;
+			break;
 		case status === 401:
 			message = 'ManyPI did not accept the API key';
 			description =
@@ -224,6 +250,21 @@ export async function manyPiApiRequestFull(
 	qs?: IDataObject,
 	options: ManyPiRequestOptions = {},
 ): Promise<ManyPiFullResponse> {
+	const credentialType = credentialTypeOf(this);
+
+	// Published endpoints are served by a separate function that only accepts
+	// mpi_ API keys, so an OAuth2 token would be refused there every time.
+	if (credentialType === OAUTH2_CREDENTIAL && path.startsWith('/v1/')) {
+		throw new NodeOperationError(this.getNode(), 'Published endpoints need an API key', {
+			itemIndex: options.itemIndex,
+			description:
+				'ManyPI answers calls to /v1/e/… only with an API key. Set Authentication to API Key on this node, or use a second ManyPI node with an API key for this operation.',
+		});
+	}
+
+	// Error statuses are left to throw rather than ignored: n8n renews an
+	// expired OAuth2 token only when a request throws a 401, so returning the
+	// 401 here would leave an OAuth2 connection dead an hour after connecting.
 	const request: IHttpRequestOptions = {
 		method,
 		url: `${BASE_URL}${path}`,
@@ -231,7 +272,6 @@ export async function manyPiApiRequestFull(
 		qs: cleanQuery(qs),
 		json: !options.binary,
 		returnFullResponse: true,
-		ignoreHttpStatusErrors: true,
 		disableFollowRedirect: true,
 	};
 	if (body !== undefined) request.body = body;
@@ -241,19 +281,53 @@ export async function manyPiApiRequestFull(
 	try {
 		response = (await this.helpers.httpRequestWithAuthentication.call(
 			this,
-			'manyPiApi',
+			credentialType,
 			request,
 		)) as ManyPiFullResponse;
 	} catch (error) {
-		// Only transport-level trouble lands here (DNS, TLS, timeouts): HTTP
-		// statuses are handled below because ignoreHttpStatusErrors is set.
+		const failed = failedResponse(error);
+		if (failed) throw manyPiApiError(this.getNode(), method, path, failed, options, credentialType);
+		// No HTTP answer at all: DNS, TLS, a timeout, or a token renewal that failed.
 		throw new NodeApiError(this.getNode(), error as JsonObject, { itemIndex: options.itemIndex });
 	}
 
+	// n8n throws on error statuses, so this only catches a version that does not.
 	if (response.statusCode >= 300) {
-		throw manyPiApiError(this.getNode(), method, path, response, options);
+		throw manyPiApiError(this.getNode(), method, path, response, options, credentialType);
 	}
 	return response;
+}
+
+interface WrappedHttpError {
+	httpCode?: string | null;
+	cause?: { response?: AxiosLikeResponse };
+	response?: AxiosLikeResponse;
+	context?: { data?: unknown };
+}
+
+interface AxiosLikeResponse {
+	status?: number;
+	headers?: IDataObject;
+	data?: unknown;
+	body?: unknown;
+}
+
+/**
+ * Recover the HTTP answer from a thrown request error. n8n wraps the failed
+ * request in a NodeApiError whose `cause` is the original error, which still
+ * holds the status, headers and body.
+ */
+function failedResponse(error: unknown): ManyPiFullResponse | undefined {
+	if (!error || typeof error !== 'object') return undefined;
+	const wrapped = error as WrappedHttpError;
+	const response = wrapped.cause?.response ?? wrapped.response;
+	const status = Number(response?.status ?? wrapped.httpCode);
+	if (!Number.isInteger(status) || status < 300 || status > 599) return undefined;
+	return {
+		statusCode: status,
+		headers: response?.headers ?? {},
+		body: response?.data ?? response?.body ?? wrapped.context?.data,
+	};
 }
 
 /** Same as manyPiApiRequestFull, returning only the parsed body. */

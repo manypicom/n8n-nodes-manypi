@@ -67,9 +67,25 @@ export class ManyPiTrigger implements INodeType {
 			{
 				name: 'manyPiApi',
 				required: true,
+				displayOptions: { show: { authentication: ['apiKey'] } },
+			},
+			{
+				name: 'manyPiOAuth2Api',
+				required: true,
+				displayOptions: { show: { authentication: ['oAuth2'] } },
 			},
 		],
 		properties: [
+			{
+				displayName: 'Authentication',
+				name: 'authentication',
+				type: 'options',
+				options: [
+					{ name: 'API Key', value: 'apiKey' },
+					{ name: 'OAuth2', value: 'oAuth2' },
+				],
+				default: 'apiKey',
+			},
 			{
 				displayName: 'Event',
 				name: 'event',

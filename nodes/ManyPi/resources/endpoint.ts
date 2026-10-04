@@ -207,6 +207,16 @@ export const endpointDescription: INodeProperties[] = [
 	endpointLocator(['delete'], 'The endpoint to delete'),
 
 	// ── Invoke, Get Result ────────────────────────────────────────────────────
+	{
+		displayName:
+			'Published endpoints only accept API keys. Set Authentication to API Key to use this operation.',
+		name: 'oauthEndpointNotice',
+		type: 'notice',
+		default: '',
+		displayOptions: {
+			show: { ...showFor(RESOURCE, ['invoke', 'getResult']), '/authentication': ['oAuth2'] },
+		},
+	},
 	endpointSlugLocator(['invoke', 'getResult']),
 	{
 		displayName: 'Parameters',

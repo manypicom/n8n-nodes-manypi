@@ -44,7 +44,8 @@
 		"n8nNodesApiVersion": 1,
 		"strict": true,
 		"credentials": [
-			"dist/credentials/ManyPiApi.credentials.js"
+			"dist/credentials/ManyPiApi.credentials.js",
+			"dist/credentials/ManyPiOAuth2Api.credentials.js"
 		],
 		"nodes": [
 			"dist/nodes/ManyPi/ManyPi.node.js",

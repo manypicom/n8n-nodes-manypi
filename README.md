@@ -62,10 +62,25 @@ The scraper run and agent run events look at the 100 most recent runs on each po
 
 ## Credentials
 
-You need a ManyPI account and an API key.
+You need a ManyPI account. Connect it in one of two ways, chosen with **Authentication** on the node:
 
-1. Sign in to [app.manypi.com](https://app.manypi.com) and open **API Access**.
-2. Create a key and grant it the permissions for the operations you plan to use:
+- **OAuth2:** sign in to ManyPI from n8n. There is nothing to copy. Needs n8n 1.119 or later.
+- **API Key:** paste a key. Use this to control exactly which permissions n8n gets. It is also the only option for Endpoint > Invoke and Get Result.
+
+### OAuth2
+
+1. On the node, set **Authentication** to **OAuth2**.
+2. Create a **ManyPI OAuth2 API** credential and click **Connect my account**.
+3. Sign in to ManyPI and approve the connection.
+
+n8n registers itself with ManyPI the first time you connect, so there is no OAuth app to create and no client ID to paste. The connection renews itself. If ManyPI later refuses it, the error asks you to reconnect.
+
+An OAuth2 connection can do anything your ManyPI account can. Published endpoints (`app.manypi.com/v1/e/…`) only accept API keys, so Endpoint > Invoke and Get Result say so when the node uses OAuth2.
+
+### API key
+
+1. Sign in to [app.manypi.com](https://app.manypi.com) and open **API Access** in the profile menu.
+2. Create a key. Every permission is ticked by default. Untick any the workflow will never need:
 
    | Permission | Needed for |
    | --- | --- |
@@ -85,6 +100,7 @@ n8n tests the key when you save the credential. ManyPI answers a key that lacks 
 
 - Built with the n8n node CLI, `@n8n/node-cli`, using n8n nodes API version 1.
 - Tested with n8n 2.8.4.
+- OAuth2 needs n8n 1.119 or later, the first release with OAuth dynamic client registration. API keys work on any version that supports community nodes.
 - No runtime dependencies. Works on n8n Cloud and self-hosted n8n.
 
 ## Usage
@@ -141,6 +157,8 @@ npm run lint
 npm test        # builds, then runs the behaviour tests without network access
 npm run dev     # starts n8n with the node loaded, rebuilding on changes
 ```
+
+`npm run dev` downloads the latest n8n, which needs Node.js 24 or later. On an older Node.js the n8n server fails to install and exits.
 
 ## Version history
 

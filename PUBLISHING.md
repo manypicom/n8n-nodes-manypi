@@ -46,15 +46,26 @@ npm install
 npm run dev          # starts n8n on http://localhost:5678 with the node loaded
 ```
 
+`npm run dev` downloads the latest n8n, which needs **Node.js 24 or later**. On Node.js 22 the n8n server fails to install (`EBADENGINE`, then `isolated-vm` does not build) and exits with code 1. Either upgrade Node.js, or use an n8n you already have:
+
+```bash
+# terminal 1: build on change and link the node into ~/.n8n-node-cli
+npm run dev -- --external-n8n
+
+# terminal 2 (PowerShell): run your installed n8n against that folder
+$env:N8N_USER_FOLDER = "$HOME\.n8n-node-cli"; $env:N8N_DEV_RELOAD = "true"; n8n start
+```
+
 On Windows, `npm install` can fail while building `isolated-vm`, a dependency of the CLI's bundled n8n. `npm install --ignore-scripts` is enough for lint, build and tests.
 
 Create a ManyPI API credential with a key that has every permission. Then go through at least these:
 
+- [ ] OAuth2: set Authentication to OAuth2, create a ManyPI OAuth2 API credential, click Connect, approve, then run Account > Get
 - [ ] Account > Get
 - [ ] Scraper > Run with Wait for Completion on, then Scraper Run > Get Data
 - [ ] Lead > Create or Update, Get, Update, Get Many and Export
 - [ ] Agent Run > Create, then Get
-- [ ] Endpoint > Invoke, after step 1 is deployed
+- [ ] Endpoint > Invoke, with an API key
 - [ ] ManyPI Trigger > Scraper Run Reached Status: activate it, run a scraper, and check it fires once
 - [ ] The ManyPI Tool inside an AI Agent node, asked to "list my scrapers"
 

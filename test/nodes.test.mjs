@@ -354,6 +354,84 @@ describe('requests', () => {
 	});
 });
 
+describe('OAuth2', () => {
+	const { ManyPiOAuth2Api } = require('../dist/credentials/ManyPiOAuth2Api.credentials.js');
+
+	it('registers itself with ManyPI through dynamic client registration', () => {
+		const credential = new ManyPiOAuth2Api();
+		assert.equal(credential.name, 'manyPiOAuth2Api');
+		assert.deepEqual(credential.extends, ['oAuth2Api']);
+		const prop = (name) => credential.properties.find((p) => p.name === name);
+		assert.equal(prop('useDynamicClientRegistration').default, true);
+		assert.equal(prop('serverUrl').default, 'https://rtedeohuyuwawyvamvyf.supabase.co/auth/v1');
+	});
+
+	it('offers both credentials, each behind the Authentication choice', () => {
+		for (const description of [node.description, new ManyPiTrigger().description]) {
+			assert.deepEqual(
+				description.credentials.map((c) => [c.name, c.displayOptions.show.authentication[0]]),
+				[['manyPiApi', 'apiKey'], ['manyPiOAuth2Api', 'oAuth2']],
+			);
+			assert.equal(description.properties[0].name, 'authentication');
+			assert.equal(description.properties[0].default, 'apiKey');
+		}
+	});
+
+	it('signs requests with the credential the node is set to', async () => {
+		const apiKey = await run({ resource: 'account', operation: 'get' }, [{ body: { data: {} } }]);
+		assert.equal(apiKey.calls[0].credentialType, 'manyPiApi');
+		const oauth = await run({ resource: 'account', operation: 'get', authentication: 'oAuth2' }, [{ body: { data: {} } }]);
+		assert.equal(oauth.calls[0].credentialType, 'manyPiOAuth2Api');
+	});
+
+	it('lets error statuses throw, which is what makes n8n renew an expired token', async () => {
+		const { calls } = await run({ resource: 'account', operation: 'get', authentication: 'oAuth2' }, [{ body: { data: {} } }]);
+		assert.equal(calls[0].ignoreHttpStatusErrors, undefined);
+	});
+
+	it('uses the OAuth2 credential in the trigger and in list searches too', async () => {
+		const trigger = new ManyPiTrigger();
+		const pollTransport = createTransport([{ body: [] }]);
+		await trigger.poll.call(
+			pollContext({
+				params: { authentication: 'oAuth2', event: 'scraperRun', statuses: ['completed'], scraperId: locatorValue('') },
+				transport: pollTransport,
+			}),
+		);
+		assert.equal(pollTransport.calls[0].credentialType, 'manyPiOAuth2Api');
+
+		const listTransport = createTransport([{ body: { scrapers: [] } }]);
+		await listSearch.searchScrapers.call(loadContext({ params: { authentication: 'oAuth2' }, transport: listTransport }));
+		assert.equal(listTransport.calls[0].credentialType, 'manyPiOAuth2Api');
+	});
+
+	it('stops endpoint calls before sending them, since /v1/e only takes API keys', async () => {
+		const transport = createTransport([]);
+		const context = executeContext({
+			params: { authentication: 'oAuth2', resource: 'endpoint', operation: 'invoke', endpointSlug: locatorValue('pricing'), parameters: '{}' },
+			transport,
+		});
+		await assert.rejects(
+			node.execute.call(context),
+			(error) => error instanceof NodeOperationError && /need an API key/.test(error.message),
+		);
+		assert.equal(transport.calls.length, 0);
+	});
+
+	it('asks for a reconnect when ManyPI still refuses the token', async () => {
+		await assert.rejects(
+			run(
+				{ resource: 'account', operation: 'get', authentication: 'oAuth2' },
+				[{ statusCode: 401, body: { error: 'Unauthorized' } }],
+			),
+			(error) =>
+				error instanceof NodeApiError &&
+				error.message === 'ManyPI did not accept the OAuth2 connection' &&
+				error.description.includes('reconnect'),
+		);
+	});
+});
+
 describe('regressions from the route review', () => {
 	it('sends the campaign that reply insights require', async () => {
 		const { calls } = await run(
