@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-manypi",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "n8n nodes for ManyPI: run scrapers and AI agents, find and verify leads, and run cold email outreach.",
 	"license": "MIT",
 	"homepage": "https://github.com/manypicom/n8n-nodes-manypi#readme",
