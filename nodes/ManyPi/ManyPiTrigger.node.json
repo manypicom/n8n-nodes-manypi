@@ -2,7 +2,10 @@
 	"node": "n8n-nodes-manypi.manyPiTrigger",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
-	"categories": ["Sales", "Marketing & Content", "Data & Storage"],
+	"categories": [
+		"Sales",
+		"Marketing & Content"
+	],
 	"resources": {
 		"credentialDocumentation": [
 			{
@@ -15,5 +18,12 @@
 			}
 		]
 	},
-	"alias": ["scraper run", "new lead", "new reply", "agent run", "webhook"]
+	"alias": [
+		"new lead",
+		"new reply",
+		"lead",
+		"reply",
+		"agent run",
+		"scraper run"
+	]
 }

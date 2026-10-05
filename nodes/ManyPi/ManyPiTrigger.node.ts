@@ -56,7 +56,7 @@ export class ManyPiTrigger implements INodeType {
 		version: 1,
 		subtitle: '={{$parameter["event"]}}',
 		description:
-			'Starts the workflow when a ManyPI scraper run or agent run finishes, a lead is saved, or a reply comes in',
+			'Starts the workflow when ManyPI saves a lead, a campaign gets a reply, or a run finishes',
 		defaults: {
 			name: 'ManyPI Trigger',
 		},
@@ -126,7 +126,7 @@ export class ManyPiTrigger implements INodeType {
 							'Triggers when a scraper run reaches a chosen status, so its data is ready to use',
 					},
 				],
-				default: 'scraperRun',
+				default: 'lead',
 			},
 
 			// ── Scraper run ─────────────────────────────────────────────────────

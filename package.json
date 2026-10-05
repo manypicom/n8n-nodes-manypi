@@ -1,16 +1,18 @@
 {
 	"name": "n8n-nodes-manypi",
 	"version": "0.1.1",
-	"description": "n8n nodes for ManyPI: run scrapers and AI agents, find and verify leads, and run cold email outreach.",
+	"description": "n8n nodes for ManyPI, the AI sales platform: find and verify leads, and run cold email outreach from your own inboxes.",
 	"license": "MIT",
 	"homepage": "https://github.com/manypicom/n8n-nodes-manypi#readme",
 	"keywords": [
 		"n8n-community-node-package",
 		"n8n",
 		"manypi",
-		"web scraping",
 		"lead generation",
 		"cold email",
+		"email outreach",
+		"email verification",
+		"sales automation",
 		"ai agent"
 	],
 	"author": {

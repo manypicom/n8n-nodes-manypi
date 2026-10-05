@@ -57,7 +57,7 @@ export class ManyPi implements INodeType {
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
 		description:
-			'Run scrapers and AI agents, find and verify leads, and send cold email outreach with ManyPI',
+			'Find and verify leads, and run cold email outreach with ManyPI',
 		defaults: {
 			name: 'ManyPI',
 		},
@@ -110,7 +110,7 @@ export class ManyPi implements INodeType {
 					{ name: 'Skill', value: 'skill' },
 					{ name: 'Suppression', value: 'suppression' },
 				],
-				default: 'scraper',
+				default: 'lead',
 			},
 			...accountDescription,
 			...agentRunDescription,

@@ -2,7 +2,9 @@
 
 This is an n8n community node. It lets you use [ManyPI](https://manypi.com) in your n8n workflows.
 
-ManyPI turns websites into structured data and runs the sales work that follows. It scrapes sites into typed JSON, runs an AI agent on plain-language goals, finds and verifies leads, and sends cold email campaigns from your own inboxes.
+ManyPI is an AI sales platform for lead generation and cold email outreach. Describe your ideal customer and its agent finds matching companies and contacts, verifies their email addresses, and sends your sequences from your own inboxes, with replies and a do-not-contact list tracked for you.
+
+With this node you can start lead searches on a schedule, send new leads to your CRM, verify addresses, enroll leads in campaigns, and route replies to the right person.
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/sustainable-use-license/) workflow automation platform.
 
@@ -22,26 +24,26 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 
 ## Operations
 
-The **ManyPI** node covers the whole ManyPI API. It can also be used as a tool by the n8n AI Agent.
+The **ManyPI** node covers the whole ManyPI API, from finding leads to handling replies. It can also be used as a tool by the n8n AI Agent.
 
 | Resource | Operations |
 | --- | --- |
-| Account | Get |
-| Agent Run | Cancel, Create, Delete, Get, Get Many, Reply |
-| Campaign | Create, Delete, Enroll Leads, Get, Get Many, Get Stats, Remove Leads, Update |
-| Email | Draft With AI, Send |
-| Email Verification | Get, Get Many, Verify |
-| Endpoint | Create, Delete, Get, Get Many, Get Result, Invoke |
-| Inbox | Get Many |
 | Lead | Create or Update, Delete, Delete Many, Export, Get, Get Capacity, Get Many, Import, Update, Update Many |
-| Lead Column | Create, Get Many |
 | Lead Search | Create or Update, Delete, Get Many, Start |
+| Lead Column | Create, Get Many |
+| Email Verification | Get, Get Many, Verify |
+| Campaign | Create, Delete, Enroll Leads, Get, Get Many, Get Stats, Remove Leads, Update |
+| Sequence | Create, Get Many |
+| Email | Draft With AI, Send |
+| Inbox | Get Many |
 | Reply | Get Insights, Get Many |
+| Suppression | Add, Get Many, Remove |
+| Agent Run | Cancel, Create, Delete, Get, Get Many, Reply |
+| Skill | Create, Get Many |
 | Scraper | Get Many, Run |
 | Scraper Run | Get, Get Data, Get Many |
-| Sequence | Create, Get Many |
-| Skill | Create, Get Many |
-| Suppression | Add, Get Many, Remove |
+| Endpoint | Create, Delete, Get, Get Many, Get Result, Invoke |
+| Account | Get |
 
 ## Trigger
 
@@ -49,12 +51,12 @@ The **ManyPI Trigger** node polls ManyPI and starts a workflow when:
 
 | Event | Fires when |
 | --- | --- |
-| Scraper Run Reached Status | A scraper run reaches a chosen status. The default is Completed, so the data is ready. |
-| Agent Run Reached Status | An agent run reaches a chosen status. Add Paused to hear when the agent is waiting for an answer. |
-| Email Verification Reached Status | An email verification job finishes. |
 | New Lead | A lead is saved, optionally filtered by status, search text or lead search. |
 | New Reply | A campaign gets a human reply, auto-reply or bounce, optionally filtered by campaign and sentiment. |
+| Email Verification Reached Status | An email verification job finishes. |
+| Agent Run Reached Status | An agent run reaches a chosen status. Add Paused to hear when the agent is waiting for an answer. |
 | New Campaign | A campaign is created. |
+| Scraper Run Reached Status | A scraper run reaches a chosen status. The default is Completed, so the data is ready. |
 
 When you activate a workflow, the trigger records what already exists and fires only for records that appear or change after that. The status events fire once for each status a run reaches. So with Paused and Completed both chosen, a run that stops to ask a question and later finishes fires twice. Use **Fetch Test Event** to see the newest matching record while you build the workflow.
 
@@ -105,10 +107,6 @@ n8n tests the key when you save the credential. ManyPI answers a key that lacks 
 
 ## Usage
 
-**Waiting for scraper results.** Scraper > Run waits for the run to finish by default and returns the extracted data under `data`. Set **Max Wait** to how long the step may take. A run that is still going comes back with `waitTimedOut: true` and keeps running in ManyPI. Collect it later with Scraper Run > Get Data, or start a separate workflow from the trigger. To start a run and move on at once, turn off **Wait for Completion**.
-
-**Lists of results.** When a scraper returns a list, it arrives as one item with the list under `data`. Add a **Split Out** node on `data` to get one item per entry.
-
 **Background work.** Agent runs, lead searches and email verifications run for minutes, not seconds, so these operations return at once with an ID. Continue in a workflow that starts from the ManyPI Trigger. For example, use Agent Run Reached Status set to Completed.
 
 **Batch limits.** ManyPI caps how much one call can carry. Import takes 100 leads, Update Many and Delete Many take 500, Enroll Leads takes 1,000, and Verify and Suppression > Add take 5,000. The node stops with a message before sending an oversized batch. Put a **Loop Over Items** node in front to split larger lists.
@@ -127,11 +125,16 @@ n8n tests the key when you save the credential. ManyPI answers a key that lacks 
 
 **Archive rather than delete.** Archived leads and campaigns are hidden everywhere but can be restored. Deleting is permanent.
 
+**Waiting for scraper results.** Scraper > Run waits for the run to finish by default and returns the extracted data under `data`. Set **Max Wait** to how long the step may take. A run that is still going comes back with `waitTimedOut: true` and keeps running in ManyPI. Collect it later with Scraper Run > Get Data, or start a separate workflow from the trigger. To start a run and move on at once, turn off **Wait for Completion**.
+
+**Lists of scraped results.** When a scraper returns a list, it arrives as one item with the list under `data`. Add a **Split Out** node on `data` to get one item per entry.
+
 ## Example workflows
 
-- **Scrape a page every morning and store the result.** Schedule Trigger, then ManyPI (Scraper > Run, with Wait for Completion on), then Google Sheets (Append Row) mapping fields from `data`.
-- **Route positive replies to your CRM.** ManyPI Trigger (New Reply, Type Human Reply, Sentiment Positive), then HubSpot (Create or Update Contact) mapping `from_email` and `from_name`.
+- **Find new leads every week.** Schedule Trigger, then ManyPI (Lead Search > Start, with a saved search). The leads it finds arrive through the ManyPI Trigger's New Lead event.
+- **Send new leads to your CRM.** ManyPI Trigger (New Lead), then HubSpot (Create or Update Contact) mapping `email`, `full_name` and `company`.
 - **Verify, then enroll, new leads.** ManyPI Trigger (New Lead), then ManyPI (Email Verification > Verify with the lead ID). Then a second workflow: ManyPI Trigger (Email Verification Reached Status), then ManyPI (Campaign > Enroll Leads).
+- **Route positive replies to sales.** ManyPI Trigger (New Reply, Type Human Reply, Sentiment Positive), then Slack (Send Message) to the sales channel, or HubSpot (Create or Update Contact) mapping `from_email` and `from_name`.
 - **Answer the agent from Slack.** ManyPI Trigger (Agent Run Reached Status, Paused), then Slack (Send and Wait for Response) with `result_summary` as the question, then ManyPI (Agent Run > Reply) with the answer.
 
 ## Resources

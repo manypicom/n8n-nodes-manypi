@@ -2,7 +2,10 @@
 	"node": "n8n-nodes-manypi.manyPi",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
-	"categories": ["Sales", "Marketing & Content", "Data & Storage"],
+	"categories": [
+		"Sales",
+		"Marketing & Content"
+	],
 	"resources": {
 		"credentialDocumentation": [
 			{
@@ -16,14 +19,14 @@
 		]
 	},
 	"alias": [
-		"scraper",
-		"web scraping",
-		"scrape",
 		"lead generation",
 		"leads",
 		"cold email",
+		"email outreach",
 		"outreach",
 		"email verification",
-		"ai agent"
+		"sales",
+		"ai agent",
+		"scraper"
 	]
 }

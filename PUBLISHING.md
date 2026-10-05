@@ -116,17 +116,17 @@ Go to [creators.n8n.io/nodes](https://creators.n8n.io/nodes) and sign in. The fo
 
 **Short description:**
 
-> Run web scrapers and AI agents, find and verify leads, and send cold email campaigns with ManyPI.
+> Find and verify leads, and run cold email outreach from your own inboxes, with ManyPI.
 
 **Long description:**
 
-> ManyPI turns websites into structured data and runs the sales work that follows. The ManyPI node covers the full API across 16 resources: run a scraper and get typed JSON back, publish scrapers as REST endpoints, give the ManyPI agent a goal in plain language and answer its questions, start lead searches, verify email addresses, and run outreach campaigns with sequences, sending inboxes, replies and a suppression list. The ManyPI Trigger starts workflows when a scraper run or agent run finishes, a lead is saved, or a reply arrives. Authentication uses a ManyPI API key, and the node can be used as a tool by the n8n AI Agent.
+> ManyPI is an AI sales platform for lead generation and cold email outreach. Describe your ideal customer and its agent finds matching companies and contacts, verifies their email addresses, and sends your sequences from your own inboxes. The ManyPI node covers the whole workflow: start lead searches, create, update and export leads, verify addresses, build sequences, run campaigns and enroll leads, send one-off emails, read replies with their sentiment, and keep a do-not-contact list. The ManyPI Trigger starts workflows when a lead is saved, a campaign gets a reply, or an agent run finishes. Sign in with OAuth2 or an API key, and use the node as a tool for the n8n AI Agent.
 
 **Example workflows** to attach, as exports from step 2. The README lists more.
 
-1. Schedule Trigger → ManyPI Scraper > Run → Google Sheets Append Row
-2. ManyPI Trigger New Reply, filtered to positive sentiment → HubSpot Create or Update Contact
-3. ManyPI Trigger Agent Run Reached Status, set to Paused → Slack Send and Wait → ManyPI Agent Run > Reply
+1. Schedule Trigger → ManyPI Lead Search > Start, with a saved search
+2. ManyPI Trigger New Lead → ManyPI Email Verification > Verify; then ManyPI Trigger Email Verification Reached Status → ManyPI Campaign > Enroll Leads
+3. ManyPI Trigger New Reply, filtered to positive sentiment → HubSpot Create or Update Contact
 
 ## Releasing later versions
 
