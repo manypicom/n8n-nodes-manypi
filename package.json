@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-manypi",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "n8n nodes for ManyPI, the AI sales platform: find and verify leads, and run cold email outreach from your own inboxes.",
 	"license": "MIT",
 	"homepage": "https://github.com/manypicom/n8n-nodes-manypi#readme",
