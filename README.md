@@ -95,7 +95,7 @@ An OAuth2 connection can do anything your ManyPI account can. Published endpoint
    | Agents & skills | Agent Run > Get and Get Many, Skill, Lead Search > Get Status and its wait, and the run triggers |
    | Forms & pages | Form, and the Form Submitted trigger |
    | Scrapers & data | Scraper, Scraper Run and Endpoint, apart from running them |
-   | Account & usage | Account > Get, and the test n8n runs when you save the credential |
+   | Account & usage | Nothing in this node. Any valid key passes the test n8n runs when you save the credential. |
 
    | Action | Needed for |
    | --- | --- |
@@ -109,7 +109,7 @@ An OAuth2 connection can do anything your ManyPI account can. Published endpoint
 
 3. In n8n, create a **ManyPI API** credential and paste the key, which starts with `mpi_`.
 
-n8n tests the key when you save the credential, which needs **Account & usage: Read**. ManyPI answers a key that lacks a permission the same way as a key that does not exist. So when an operation reports that the key was not accepted, the error names the permission that operation needs.
+n8n tests the key when you save the credential, and any valid key passes, whatever its permissions. ManyPI answers a key that lacks a permission the same way as a key that does not exist. So when an operation reports that the key was not accepted, the error names the permission that operation needs.
 
 ## Compatibility
 

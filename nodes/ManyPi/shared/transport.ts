@@ -212,6 +212,13 @@ export function manyPiApiError(
 				'The connection expired or was revoked, and n8n could not renew it. Open the ManyPI OAuth2 credential and reconnect your account.' +
 				saidSuffix;
 			break;
+		// /api/user answers every valid key, so here a 401 is about the key itself.
+		case status === 401 && path === '/api/user':
+			message = 'ManyPI did not accept the API key';
+			description =
+				'The key is wrong, revoked or expired. Check it under API Access in the ManyPI dashboard, or create a new one.' +
+				saidSuffix;
+			break;
 		case status === 401:
 			message = 'ManyPI did not accept the API key';
 			description =
