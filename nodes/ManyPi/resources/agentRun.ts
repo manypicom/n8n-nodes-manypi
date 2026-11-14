@@ -1,4 +1,5 @@
 import type { IDataObject, IExecuteFunctions, INodeProperties } from 'n8n-workflow';
+import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 import {
 	AGENT_RUN_STATUS_OPTIONS,
 	brandOption,
@@ -150,6 +151,19 @@ export const agentRunDescription: INodeProperties[] = [
 					'Attach the run to an existing conversation so it keeps that context. Leave empty to start fresh.',
 			},
 			{
+				displayName: 'Effort',
+				name: 'effort',
+				type: 'options',
+				options: [
+					{ name: 'High', value: 'high' },
+					{ name: 'Low', value: 'low' },
+					{ name: 'Medium', value: 'medium' },
+					{ name: 'Minimal', value: 'minimal' },
+				],
+				default: 'medium',
+				description: 'How hard the model thinks before each step. Applies on plans with the full models.',
+			},
+			{
 				displayName: 'Max Pages',
 				name: 'maxPages',
 				type: 'number',
@@ -166,6 +180,18 @@ export const agentRunDescription: INodeProperties[] = [
 				description: 'The most steps the agent may take',
 			},
 			{
+				displayName: 'Model',
+				name: 'model',
+				type: 'options',
+				options: [
+					{ name: 'Luna (Fastest)', value: 'luna' },
+					{ name: 'Sol (Strongest, Paid Plans)', value: 'sol' },
+					{ name: 'Terra (Balanced)', value: 'terra' },
+				],
+				default: 'terra',
+				description: 'The model the agent runs on. Sol needs a plan with the full models.',
+			},
+			{
 				displayName: 'Output Schema',
 				name: 'outputSchema',
 				type: 'json',
@@ -179,7 +205,7 @@ export const agentRunDescription: INodeProperties[] = [
 				type: 'string',
 				default: '',
 				placeholder: 'e.g. lead_generation',
-				description: 'The slug of a playbook the run should follow',
+				description: 'The slug of a playbook, or of one of your own skills, for the run to follow',
 			},
 		],
 	},
@@ -207,8 +233,28 @@ export const agentRunDescription: INodeProperties[] = [
 		type: 'boolean',
 		default: false,
 		description:
-			'Whether to stop a run that is still working and start a new one with this message. When off, replying to a running run is refused.',
+			'Whether to stop a run that is still working and start a new one with this message. When off, the message is passed to the working run, which keeps its progress.',
 		displayOptions: { show: showFor(RESOURCE, 'reply') },
+	},
+	{
+		displayName: 'Delivery',
+		name: 'mode',
+		type: 'options',
+		options: [
+			{
+				name: 'When the Agent Comes Up for Air',
+				value: 'queued',
+				description: 'The agent reads it between tasks',
+			},
+			{
+				name: 'At the Next Step',
+				value: 'now',
+				description: 'The agent reads it before its next step',
+			},
+		],
+		default: 'queued',
+		description: 'When a run that is still working gets the message. A paused or finished run gets it at once.',
+		displayOptions: { show: { ...showFor(RESOURCE, 'reply'), interrupt: [false] } },
 	},
 
 	// ── Get Many ──────────────────────────────────────────────────────────────
@@ -265,6 +311,8 @@ export const agentRunHandlers: ResourceHandlers = {
 			playbook: additional.playbook,
 			max_steps: additional.maxSteps,
 			max_pages: additional.maxPages,
+			model: additional.model,
+			effort: additional.effort,
 			output_schema: parseJsonObjectParameter.call(
 				this,
 				additional.outputSchema,
@@ -311,10 +359,12 @@ export const agentRunHandlers: ResourceHandlers = {
 	},
 
 	async reply(i) {
-		const body = {
+		const interrupt = this.getNodeParameter('interrupt', i, false) as boolean;
+		const body: IDataObject = {
 			message: this.getNodeParameter('message', i) as string,
-			interrupt: this.getNodeParameter('interrupt', i, false) as boolean,
+			interrupt,
 		};
+		if (!interrupt) body.mode = this.getNodeParameter('mode', i, 'queued') as string;
 		return (await manyPiApiRequest.call(
 			this,
 			'POST',
@@ -350,7 +400,31 @@ export const agentRunHandlers: ResourceHandlers = {
 			undefined,
 			options,
 		);
-		return { id, cancelled: true, previousStatus };
+		// ManyPI answers ok for a teammate's run without touching it, and a
+		// paused run is only flagged, so report what the run says now.
+		const after = (await manyPiApiRequest.call(
+			this,
+			'GET',
+			`/api/agents/runs/${segment(id)}`,
+			undefined,
+			undefined,
+			options,
+		)) as IDataObject;
+		if (after.status === 'cancelled') return { id, cancelled: true, previousStatus };
+		if (previousStatus === 'paused' && after.status === 'paused') {
+			return {
+				id,
+				cancelled: true,
+				previousStatus,
+				status: 'paused',
+				note: 'A paused run stays paused, flagged to stop, and never resumes.',
+			};
+		}
+		throw new NodeOperationError(this.getNode(), 'ManyPI did not cancel this run', {
+			itemIndex: i,
+			description:
+				'Only the person who started a run can cancel it. This run may belong to a teammate.',
+		});
 	},
 
 	async delete(i) {
@@ -359,6 +433,19 @@ export const agentRunHandlers: ResourceHandlers = {
 		// The delete route answers ok whether or not the run existed.
 		await manyPiApiRequest.call(this, 'GET', path, undefined, undefined, options);
 		await manyPiApiRequest.call(this, 'DELETE', path, undefined, undefined, options);
-		return { deleted: true };
+		// ManyPI answers ok for a teammate's run without deleting it, so check.
+		try {
+			await manyPiApiRequest.call(this, 'GET', path, undefined, undefined, options);
+		} catch (error) {
+			if ((error as { httpCode?: string }).httpCode === '404') return { deleted: true };
+			throw error instanceof NodeApiError
+				? error
+				: new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
+		}
+		throw new NodeOperationError(this.getNode(), 'ManyPI did not delete this run', {
+			itemIndex: i,
+			description:
+				'Only the person who started a run can delete it. This run may belong to a teammate.',
+		});
 	},
 };

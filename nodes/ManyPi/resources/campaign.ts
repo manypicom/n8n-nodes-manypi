@@ -46,6 +46,64 @@ const INBOX_STRATEGY_OPTIONS = [
 	{ name: 'Single Inbox', value: 'single' },
 ];
 
+/** The send window, shared by Create and Update. */
+const SCHEDULE_OPTIONS: INodeProperties[] = [
+	{
+		displayName: 'Schedule Enabled',
+		name: 'scheduleEnabled',
+		type: 'boolean',
+		default: true,
+		description: 'Whether to send only within the days and hours set in this campaign',
+	},
+	{
+		displayName: 'Send Days',
+		name: 'sendDays',
+		type: 'multiOptions',
+		options: [
+			{ name: 'Friday', value: 5 },
+			{ name: 'Monday', value: 1 },
+			{ name: 'Saturday', value: 6 },
+			{ name: 'Sunday', value: 0 },
+			{ name: 'Thursday', value: 4 },
+			{ name: 'Tuesday', value: 2 },
+			{ name: 'Wednesday', value: 3 },
+		],
+		default: [1, 2, 3, 4, 5],
+		description: 'The weekdays to send on',
+	},
+	{
+		displayName: 'Send From',
+		name: 'sendFrom',
+		type: 'string',
+		default: '09:00',
+		placeholder: 'e.g. 09:00',
+		description: 'The earliest local send time, as HH:MM in the campaign timezone',
+	},
+	{
+		displayName: 'Send Until',
+		name: 'sendTo',
+		type: 'string',
+		default: '17:00',
+		placeholder: 'e.g. 17:00',
+		description: 'The latest local send time, as HH:MM in the campaign timezone',
+	},
+	{
+		displayName: 'Timezone',
+		name: 'timezone',
+		type: 'string',
+		default: '',
+		placeholder: 'e.g. America/New_York',
+		description: 'An IANA timezone name',
+	},
+	{
+		displayName: 'Track Opens',
+		name: 'trackOpens',
+		type: 'boolean',
+		default: false,
+		description: 'Whether to add an open-tracking pixel to each email',
+	},
+];
+
 export const campaignDescription: INodeProperties[] = [
 	{
 		displayName: 'Operation',
@@ -59,7 +117,7 @@ export const campaignDescription: INodeProperties[] = [
 				value: 'create',
 				action: 'Create a campaign',
 				description:
-					'Bind a sequence to a sending inbox. Nothing is sent until you enroll leads.',
+					'Bind a sequence to a sending inbox. The campaign starts active, and nothing is sent until you enroll leads.',
 			},
 			{
 				name: 'Delete',
@@ -79,7 +137,7 @@ export const campaignDescription: INodeProperties[] = [
 				value: 'get',
 				action: 'Get a campaign',
 				description:
-					'Retrieve a campaign with its stats, per-step breakdown and enrolled leads',
+					'Retrieve a campaign with its stats, per-step breakdown, capacity and its newest 500 enrollments',
 			},
 			{
 				name: 'Get Many',
@@ -95,6 +153,13 @@ export const campaignDescription: INodeProperties[] = [
 					'Retrieve 14 days of sending activity across every campaign: sends, opens, replies, bounces and unsubscribes',
 			},
 			{
+				name: 'Launch',
+				value: 'launch',
+				action: 'Launch a campaign',
+				description:
+					'Check a draft campaign and start it sending. If something is missing, the error lists what to fix.',
+			},
+			{
 				name: 'Remove Leads',
 				value: 'removeLeads',
 				action: 'Remove leads from a campaign',
@@ -105,7 +170,7 @@ export const campaignDescription: INodeProperties[] = [
 				name: 'Update',
 				value: 'update',
 				action: 'Update a campaign',
-				description: 'Pause, resume or archive a campaign, or change its settings',
+				description: 'Pause, resume or archive a campaign, or change its settings and schedule',
 			},
 		],
 		default: 'getAll',
@@ -165,9 +230,9 @@ export const campaignDescription: INodeProperties[] = [
 				displayName: 'Priority',
 				name: 'priority',
 				type: 'number',
-				typeOptions: { numberPrecision: 0 },
+				typeOptions: { minValue: 1, maxValue: 10, numberPrecision: 0 },
 				default: 5,
-				description: 'When campaigns share an inbox, the higher priority gets the next send slot',
+				description: 'From 1 to 10. When campaigns share an inbox, the higher priority gets the next send slot.',
 			},
 			{
 				displayName: 'Reply-To',
@@ -177,60 +242,7 @@ export const campaignDescription: INodeProperties[] = [
 				default: '',
 				description: 'Where replies should land. Defaults to the inbox address.',
 			},
-			{
-				displayName: 'Schedule Enabled',
-				name: 'scheduleEnabled',
-				type: 'boolean',
-				default: true,
-				description: 'Whether to send only within the days and hours set in this campaign',
-			},
-			{
-				displayName: 'Send Days',
-				name: 'sendDays',
-				type: 'multiOptions',
-				options: [
-					{ name: 'Friday', value: 5 },
-					{ name: 'Monday', value: 1 },
-					{ name: 'Saturday', value: 6 },
-					{ name: 'Sunday', value: 0 },
-					{ name: 'Thursday', value: 4 },
-					{ name: 'Tuesday', value: 2 },
-					{ name: 'Wednesday', value: 3 },
-				],
-				default: [1, 2, 3, 4, 5],
-				description: 'The weekdays to send on',
-			},
-			{
-				displayName: 'Send From',
-				name: 'sendFrom',
-				type: 'string',
-				default: '09:00',
-				placeholder: 'e.g. 09:00',
-				description: 'The earliest local send time, as HH:MM in the campaign timezone',
-			},
-			{
-				displayName: 'Send Until',
-				name: 'sendTo',
-				type: 'string',
-				default: '17:00',
-				placeholder: 'e.g. 17:00',
-				description: 'The latest local send time, as HH:MM in the campaign timezone',
-			},
-			{
-				displayName: 'Timezone',
-				name: 'timezone',
-				type: 'string',
-				default: '',
-				placeholder: 'e.g. America/New_York',
-				description: 'An IANA timezone name',
-			},
-			{
-				displayName: 'Track Opens',
-				name: 'trackOpens',
-				type: 'boolean',
-				default: false,
-				description: 'Whether to add an open-tracking pixel to each email',
-			},
+			...SCHEDULE_OPTIONS,
 		],
 	},
 
@@ -240,6 +252,7 @@ export const campaignDescription: INodeProperties[] = [
 	campaignLocator(['update'], 'The campaign to update'),
 	campaignLocator(['enrollLeads'], 'The campaign to enroll the leads in'),
 	campaignLocator(['removeLeads'], 'The campaign to remove the leads from'),
+	campaignLocator(['launch'], 'The draft or paused campaign to launch'),
 	leadIdsField(
 		'enrollLeads',
 		'Up to 1,000 lead IDs, separated by commas. Leads with no email, already enrolled, or suppressed are skipped rather than failed.',
@@ -277,9 +290,9 @@ export const campaignDescription: INodeProperties[] = [
 				displayName: 'Priority',
 				name: 'priority',
 				type: 'number',
-				typeOptions: { numberPrecision: 0 },
+				typeOptions: { minValue: 1, maxValue: 10, numberPrecision: 0 },
 				default: 5,
-				description: 'When campaigns share an inbox, the higher priority gets the next send slot',
+				description: 'From 1 to 10. When campaigns share an inbox, the higher priority gets the next send slot.',
 			},
 			{
 				displayName: 'Reply-To',
@@ -296,12 +309,13 @@ export const campaignDescription: INodeProperties[] = [
 					{
 						name: 'Active',
 						value: 'active',
-						description: 'Resume sending',
+						description: 'Resume a paused campaign. A draft goes live with Launch instead.',
 					},
 					{
 						name: 'Archived',
 						value: 'archived',
-						description: 'Stop sending and hide the campaign, keeping its history',
+						description:
+							'Stop sending and hide the campaign, keeping its history. A draft cannot be archived; delete it instead.',
 					},
 					{
 						name: 'Paused',
@@ -311,6 +325,14 @@ export const campaignDescription: INodeProperties[] = [
 				],
 				default: 'paused',
 			},
+			{
+				displayName: 'Stop on Reply',
+				name: 'stopOnReply',
+				type: 'boolean',
+				default: true,
+				description: 'Whether a lead stops getting the sequence once they reply',
+			},
+			...SCHEDULE_OPTIONS,
 		],
 	},
 
@@ -338,6 +360,7 @@ export const campaignDescription: INodeProperties[] = [
 				options: [
 					{ name: 'Active', value: 'active' },
 					{ name: 'Archived', value: 'archived' },
+					{ name: 'Draft', value: 'draft' },
 					{ name: 'Paused', value: 'paused' },
 				],
 				default: 'active',
@@ -422,7 +445,9 @@ export const campaignHandlers: ResourceHandlers = {
 		const options = { itemIndex: i, resourceLabel: 'campaign' };
 		// The delete route answers ok for a campaign that does not exist, so
 		// check first: a mistyped ID should fail, not report a deletion.
-		await manyPiApiRequest.call(this, 'GET', `/api/outreach/campaigns/${segment(id)}`, undefined, undefined, options);
+		// brand=all: this read is otherwise held to the current dashboard brand,
+		// while the delete reaches every brand the caller can.
+		await manyPiApiRequest.call(this, 'GET', `/api/outreach/campaigns/${segment(id)}`, undefined, { brand: 'all' }, options);
 		await manyPiApiRequest.call(this, 'DELETE', '/api/outreach/campaigns', undefined, { id }, options);
 		return { deleted: true };
 	},
@@ -450,12 +475,16 @@ export const campaignHandlers: ResourceHandlers = {
 			'GET',
 			`/api/outreach/campaigns/${segment(campaignId.call(this, i))}`,
 			undefined,
-			undefined,
+			{ brand: 'all' },
 			{ itemIndex: i, resourceLabel: 'campaign' },
 		)) as IDataObject;
-		const campaign = (data.campaign ?? {}) as IDataObject;
+		const { campaign: rawCampaign, ...rest } = data;
+		const campaign = (rawCampaign ?? {}) as IDataObject;
+		// Everything else the route reports (capacity, work left, daily sends,
+		// A/B variants, funnel, reply mix) rides along beside the campaign.
 		return {
 			...campaign,
+			...rest,
 			stats: data.stats ?? campaign.stats,
 			perStep: data.perStep ?? data.steps,
 			leads: data.leads ?? data.enrollments,
@@ -498,6 +527,18 @@ export const campaignHandlers: ResourceHandlers = {
 		};
 	},
 
+	async launch(i) {
+		const data = (await manyPiApiRequest.call(
+			this,
+			'POST',
+			`/api/outreach/campaigns/${segment(campaignId.call(this, i))}/launch`,
+			undefined,
+			undefined,
+			{ itemIndex: i, resourceLabel: 'campaign' },
+		)) as IDataObject;
+		return ((data && data.campaign) ?? data) as IDataObject;
+	},
+
 	async removeLeads(i) {
 		const leadIds = toList(this.getNodeParameter('leadIds', i));
 		assertBatchSize.call(this, leadIds, MAX_ENROLL, 'lead IDs', i);
@@ -519,6 +560,7 @@ export const campaignHandlers: ResourceHandlers = {
 	async update(i) {
 		const id = campaignId.call(this, i);
 		const fields = this.getNodeParameter('updateFields', i, {}) as IDataObject;
+		assertSchedule.call(this, fields, i);
 		const changes = prune({
 			status: fields.status,
 			name: fields.name,
@@ -526,6 +568,13 @@ export const campaignHandlers: ResourceHandlers = {
 			daily_limit: fields.dailyLimit,
 			priority: fields.priority,
 			inbox_strategy: fields.inboxStrategy,
+			stop_on_reply: fields.stopOnReply,
+			schedule_enabled: fields.scheduleEnabled,
+			send_days: fields.sendDays,
+			send_from: fields.sendFrom,
+			send_to: fields.sendTo,
+			timezone: fields.timezone,
+			track_opens: fields.trackOpens,
 		});
 		if (Object.keys(changes).length === 0) {
 			throw new NodeOperationError(this.getNode(), 'No fields to update were set', {

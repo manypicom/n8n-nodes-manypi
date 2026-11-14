@@ -104,6 +104,7 @@ export function simplifyField(show: Show): INodeProperties {
 	};
 }
 
+/** Brand for campaigns, sequences, inboxes, stats and agent runs. */
 export const brandOption: INodeProperties = {
 	displayName: 'Brand',
 	name: 'brand',
@@ -111,7 +112,15 @@ export const brandOption: INodeProperties = {
 	default: '',
 	placeholder: 'e.g. all',
 	description:
-		'Narrow the results to one brand by its ID, or enter "all" for the whole workspace. Leave empty to use your current brand.',
+		'Enter "all" for every brand in the workspace. Leave empty for your current brand.',
+};
+
+/** Leads are the one list that narrows to a single brand by ID. */
+export const leadBrandOption: INodeProperties = {
+	...brandOption,
+	placeholder: 'e.g. 9f1c2a44-0c3e-4b7a-8f61-2d5e8b9a1c33',
+	description:
+		'Narrow to one brand by its ID. Leave empty, or enter "all", for every brand. Leads with no brand are always included.',
 };
 
 export const LEAD_STATUS_OPTIONS = [
@@ -143,6 +152,8 @@ export const REPLY_SENTIMENT_OPTIONS = [
 	{ name: 'Objection', value: 'objection' },
 	{ name: 'Out of Office', value: 'ooo' },
 	{ name: 'Positive', value: 'positive' },
+	{ name: 'Automated', value: 'automated' },
+	{ name: 'Informational', value: 'informational' },
 	{ name: 'Referral', value: 'referral' },
 	{ name: 'Unsubscribe Request', value: 'unsubscribe' },
 ];

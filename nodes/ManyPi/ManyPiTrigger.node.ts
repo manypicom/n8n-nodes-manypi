@@ -15,10 +15,12 @@ import {
 	SCRAPER_RUN_STATUS_OPTIONS,
 	VERIFICATION_JOB_STATUS_OPTIONS,
 	brandOption,
+	leadBrandOption,
 	locator,
 } from './shared/descriptions';
 import { assertSentimentAvailable } from './resources/reply';
-import { searchCampaigns, searchScrapers } from './shared/listSearch';
+import { FORM_RESPONSE_STATUS_OPTIONS, flattenResponse } from './resources/form';
+import { searchCampaigns, searchForms, searchScrapers } from './shared/listSearch';
 import { manyPiApiRequest } from './shared/transport';
 import { asArray, newestFirst, normalizeScraperRun } from './shared/utils';
 
@@ -105,6 +107,17 @@ export class ManyPiTrigger implements INodeType {
 						description: 'Triggers when an email verification job reaches a chosen status',
 					},
 					{
+						name: 'Form Submitted',
+						value: 'formResponse',
+						description: 'Triggers when someone submits a ManyPI form',
+					},
+					{
+						name: 'Lead Search Reached Status',
+						value: 'leadSearch',
+						description:
+							'Triggers when a lead search reaches a chosen status, such as completed, so its leads are ready',
+					},
+					{
 						name: 'New Campaign',
 						value: 'campaign',
 						description: 'Triggers when an outreach campaign is created',
@@ -170,6 +183,62 @@ export class ManyPiTrigger implements INodeType {
 				],
 			},
 
+			// ── Form submitted ──────────────────────────────────────────────────
+			locator({
+				displayName: 'Form',
+				name: 'formId',
+				noun: 'form',
+				searchListMethod: 'searchForms',
+				show: { event: ['formResponse'] },
+				description: 'The form to watch',
+				idLabel: 'ID or Key',
+				idPlaceholder: 'e.g. demo-request',
+			}),
+			{
+				displayName: 'Options',
+				name: 'formOptions',
+				type: 'collection',
+				placeholder: 'Add Option',
+				default: {},
+				displayOptions: forEvent('formResponse'),
+				options: [
+					{
+						displayName: 'Include Test Responses',
+						name: 'includeTests',
+						type: 'boolean',
+						default: false,
+						description: 'Whether to also fire for responses sent from the form preview',
+					},
+					{
+						displayName: 'Responses',
+						name: 'status',
+						type: 'options',
+						options: FORM_RESPONSE_STATUS_OPTIONS.filter((option) =>
+							['completed', 'partial', 'spam'].includes(option.value),
+						),
+						default: 'completed',
+						description: 'Which responses fire the workflow. Completed is a submitted form.',
+					},
+				],
+			},
+
+			// ── Lead search ─────────────────────────────────────────────────────
+			statusesParameter(
+				'leadSearch',
+				AGENT_RUN_STATUS_OPTIONS,
+				'Fire when a lead search reaches one of these. Then use Lead > Get Many with Lead Search set to {{ $json.runId }} to fetch its leads. Add Paused to hear when it needs an answer.',
+			),
+			{
+				displayName: 'Only This Lead Search ID',
+				name: 'leadSearchRunId',
+				type: 'string',
+				default: '',
+				placeholder: 'e.g. 5f6a7b8c-9d0e-4f12-a3b4-c5d6e7f8a9b0',
+				description:
+					'Only fire for this one search, such as the run ID a Lead Search > Start node returned. Leave empty for every lead search.',
+				displayOptions: forEvent('leadSearch'),
+			},
+
 			// ── Email verification ──────────────────────────────────────────────
 			statusesParameter(
 				'emailVerification',
@@ -186,7 +255,7 @@ export class ManyPiTrigger implements INodeType {
 				default: {},
 				displayOptions: forEvent('lead'),
 				options: [
-					brandOption,
+					leadBrandOption,
 					{
 						displayName: 'Lead Search ID',
 						name: 'campaign',
@@ -271,6 +340,7 @@ export class ManyPiTrigger implements INodeType {
 
 	methods = {
 		listSearch: {
+			searchForms,
 			searchCampaigns,
 			searchScrapers,
 		},
@@ -319,7 +389,7 @@ async function fetchRecords(
 ): Promise<{ records: IDataObject[]; filterKey: IDataObject; byStatus: boolean }> {
 	let records: IDataObject[];
 	let filterKey: IDataObject;
-	const byStatus = ['scraperRun', 'agentRun', 'emailVerification'].includes(event);
+	const byStatus = ['scraperRun', 'agentRun', 'leadSearch', 'emailVerification'].includes(event);
 
 	switch (event) {
 		case 'scraperRun': {
@@ -352,6 +422,64 @@ async function fetchRecords(
 				(run) => !statuses.length || statuses.includes(String(run.status)),
 			);
 			filterKey = { statuses, ...filters };
+			break;
+		}
+
+		case 'leadSearch': {
+			const statuses = this.getNodeParameter('statuses', []) as string[];
+			const only = String(this.getNodeParameter('leadSearchRunId', '') ?? '').trim();
+			// Every brand: a search started from n8n runs in whichever brand the
+			// dashboard was on, and a brand switch must not replay a backlog.
+			const body = await manyPiApiRequest.call(this, 'GET', '/api/agents/runs', undefined, {
+				limit: 100,
+				brand: 'all',
+			});
+			const runs = asArray(body);
+			// target_lead_count is what marks a run as a lead search. An older
+			// ManyPI leaves it out of the list, and every search would be missed
+			// without a word, so say so instead.
+			if (runs.length && !runs.some((run) => 'target_lead_count' in run)) {
+				throw new NodeOperationError(this.getNode(), 'ManyPI did not say which runs are lead searches', {
+					description:
+						'This ManyPI version does not report lead searches in the run list yet. Use Agent Run Reached Status for now, filtered on the run ID.',
+				});
+			}
+			records = newestFirst(runs, 'created_at')
+				.filter(
+					(run) =>
+						run.target_lead_count !== null &&
+						run.target_lead_count !== undefined &&
+						(!only || run.id === only) &&
+						(!statuses.length || statuses.includes(String(run.status))),
+				)
+				.map((run) => ({ ...run, runId: run.id }));
+			filterKey = { statuses, only };
+			break;
+		}
+
+		case 'formResponse': {
+			const formId = String(
+				this.getNodeParameter('formId', '', { extractValue: true }) ?? '',
+			).trim();
+			if (!formId) {
+				throw new NodeOperationError(this.getNode(), 'No form was picked', {
+					description: 'Pick the form to watch, or enter its ID or key.',
+				});
+			}
+			const options = this.getNodeParameter('formOptions', {}) as IDataObject;
+			const status = (options.status as string) || 'completed';
+			const body = await manyPiApiRequest.call(
+				this,
+				'GET',
+				`/api/forms/${encodeURIComponent(formId)}/responses`,
+				undefined,
+				{ status, limit: 200, offset: 0 },
+				{ resourceLabel: 'form' },
+			);
+			records = asArray(body, 'responses')
+				.filter((response) => options.includeTests || !response.is_test)
+				.map(flattenResponse);
+			filterKey = { formId, status, includeTests: Boolean(options.includeTests) };
 			break;
 		}
 

@@ -3,9 +3,12 @@ import { NodeOperationError } from 'n8n-workflow';
 import { brandOption, returnAllAndLimit, showFor } from '../shared/descriptions';
 import { manyPiApiRequest } from '../shared/transport';
 import type { ResourceHandlers } from '../shared/types';
-import { applyLimit, asArray, containsText, prune } from '../shared/utils';
+import { applyLimit, asArray, assertBatchSize, containsText, prune } from '../shared/utils';
 
 const RESOURCE = 'sequence';
+
+/** ManyPI sends at most 10 emails per sequence and drops the rest. */
+const MAX_STEPS = 10;
 
 export const sequenceDescription: INodeProperties[] = [
 	{
@@ -80,10 +83,10 @@ export const sequenceDescription: INodeProperties[] = [
 						displayName: 'Wait Days',
 						name: 'waitDays',
 						type: 'number',
-						typeOptions: { minValue: 0, numberPrecision: 0 },
+						typeOptions: { minValue: 0, maxValue: 90, numberPrecision: 1 },
 						default: 3,
 						description:
-							'Days to wait after the previous step. Ignored on the first step, which sends on enrollment.',
+							'Days to wait after the previous step, up to 90. 0.5 is 12 hours. Ignored on the first step, which sends on enrollment.',
 					},
 					{
 						displayName: 'Thread Mode',
@@ -158,6 +161,8 @@ export const sequenceHandlers: ResourceHandlers = {
 				description: 'Add at least one step under Steps and fill in its Body (HTML).',
 			});
 		}
+		// ManyPI keeps the first 10 emails and drops the rest without a word.
+		assertBatchSize.call(this, steps, MAX_STEPS, 'steps', i);
 		steps.forEach((step, index) => {
 			if (!step.subject.trim() && step.thread_mode !== 'reply') {
 				throw new NodeOperationError(this.getNode(), `Step ${index + 1} has no subject`, {

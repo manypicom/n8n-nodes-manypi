@@ -127,6 +127,10 @@ export const emailVerificationHandlers: ResourceHandlers = {
 		}
 		if (leadIds.length) assertBatchSize.call(this, leadIds, MAX_BATCH, 'lead IDs', i);
 		if (emails.length) assertBatchSize.call(this, emails, MAX_BATCH, 'email addresses', i);
+		// The job holds 5,000 addresses across both lists and drops the rest.
+		if (leadIds.length && emails.length) {
+			assertBatchSize.call(this, [...leadIds, ...emails], MAX_BATCH, 'lead IDs and email addresses together', i);
+		}
 		const data = (await manyPiApiRequest.call(
 			this,
 			'POST',

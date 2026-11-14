@@ -15,6 +15,7 @@ import {
 	emailVerificationHandlers,
 } from './resources/emailVerification';
 import { endpointDescription, endpointHandlers } from './resources/endpoint';
+import { formDescription, formHandlers } from './resources/form';
 import { inboxDescription, inboxHandlers } from './resources/inbox';
 import { leadDescription, leadHandlers } from './resources/lead';
 import { leadColumnDescription, leadColumnHandlers } from './resources/leadColumn';
@@ -36,6 +37,7 @@ const handlers: Record<string, ResourceHandlers> = {
 	email: emailHandlers,
 	emailVerification: emailVerificationHandlers,
 	endpoint: endpointHandlers,
+	form: formHandlers,
 	inbox: inboxHandlers,
 	lead: leadHandlers,
 	leadColumn: leadColumnHandlers,
@@ -54,10 +56,12 @@ export class ManyPi implements INodeType {
 		name: 'manyPi',
 		icon: { light: 'file:../../icons/manypi.svg', dark: 'file:../../icons/manypi.dark.svg' },
 		group: ['transform'],
-		version: 1,
+		// 1.1 moved the lead search filter out of Filters into its own picker.
+		version: [1, 1.1],
+		defaultVersion: 1.1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
 		description:
-			'Find and verify leads, and run cold email outreach with ManyPI',
+			'Find and verify leads, run cold email outreach, and collect form responses with ManyPI',
 		defaults: {
 			name: 'ManyPI',
 		},
@@ -99,6 +103,7 @@ export class ManyPi implements INodeType {
 					{ name: 'Email', value: 'email' },
 					{ name: 'Email Verification', value: 'emailVerification' },
 					{ name: 'Endpoint', value: 'endpoint' },
+					{ name: 'Form', value: 'form' },
 					{ name: 'Inbox', value: 'inbox' },
 					{ name: 'Lead', value: 'lead' },
 					{ name: 'Lead Column', value: 'leadColumn' },
@@ -118,6 +123,7 @@ export class ManyPi implements INodeType {
 			...emailDescription,
 			...emailVerificationDescription,
 			...endpointDescription,
+			...formDescription,
 			...inboxDescription,
 			...leadDescription,
 			...leadColumnDescription,
@@ -137,7 +143,9 @@ export class ManyPi implements INodeType {
 			searchCampaigns: listSearch.searchCampaigns,
 			searchEndpoints: listSearch.searchEndpoints,
 			searchEndpointSlugs: listSearch.searchEndpointSlugs,
+			searchForms: listSearch.searchForms,
 			searchInboxes: listSearch.searchInboxes,
+			searchLeadSearchRuns: listSearch.searchLeadSearchRuns,
 			searchLeads: listSearch.searchLeads,
 			searchSavedLeadSearches: listSearch.searchSavedLeadSearches,
 			searchScraperRuns: listSearch.searchScraperRuns,

@@ -36,7 +36,7 @@ describe('node description', () => {
 	it('declares every resource and wires an operation handler for each option', () => {
 		const properties = node.description.properties;
 		const resources = properties.find((p) => p.name === 'resource').options.map((o) => o.value);
-		assert.equal(resources.length, 16);
+		assert.equal(resources.length, 17);
 		for (const resource of resources) {
 			const operation = properties.find(
 				(p) => p.name === 'operation' && p.displayOptions?.show?.resource?.includes(resource),
@@ -221,6 +221,7 @@ describe('requests', () => {
 			rows: [{ email: 'nathan@example.com', full_name: 'Nathan', score: 80, custom: { tech_stack: 'Shopify' } }],
 			duplicates: 'overwrite',
 			declare_fields: [{ label: 'tech_stack', key: 'tech_stack' }],
+			source: 'manual',
 		});
 		assert.equal(output[0].json.result, 'updated');
 	});
@@ -484,7 +485,7 @@ describe('regressions from the route review', () => {
 			],
 		);
 		assert.deepEqual(calls[1].body, {
-			criteria: { description: 'DTC brands', count: 50, titles: ['CEO'] },
+			criteria: { description: 'Find 50 leads. DTC brands', count: 50, titles: ['CEO'] },
 			profile_id: 'p1',
 			save: false,
 			check_intent: false,
@@ -681,7 +682,7 @@ describe('errors', () => {
 			(error) =>
 				error instanceof NodeApiError &&
 				error.message === 'ManyPI did not accept the API key' &&
-				error.description.includes('"Run Scrapers"') &&
+				error.description.includes('"Run scrapers"') &&
 				error.description.includes('Invalid API key') &&
 				error.httpCode === '401' &&
 				error.context.itemIndex === 0,
@@ -825,5 +826,445 @@ describe('list search', () => {
 		]);
 		const result = await listSearch.searchScrapers.call(loadContext({ transport }), 'PRICING');
 		assert.deepEqual(result.results, [{ name: 'Competitor pricing', value: '1' }]);
+	});
+});
+
+describe('leads from one lead search', () => {
+	const RUN = '5f6a7b8c-9d0e-4f12-a3b4-c5d6e7f8a9b0';
+
+	it('sends the picked lead search as the run filter', async () => {
+		const { output, calls } = await run(
+			{
+				resource: 'lead',
+				operation: 'getAll',
+				leadSearchRunId: locatorValue(RUN),
+				returnAll: true,
+				simplify: true,
+				filters: {},
+			},
+			[{ body: { leads: [lead(1), lead(2)] } }],
+		);
+		assert.equal(calls[0].url, `${BASE}/api/leads`);
+		assert.equal(calls[0].qs.campaign, RUN);
+		assert.equal(calls[0].qs.meta, '0');
+		assert.equal(output.length, 2);
+	});
+
+	it('still honours the version 1 Filters field in saved workflows', async () => {
+		const { calls } = await run(
+			{ resource: 'lead', operation: 'getAll', returnAll: true, simplify: true, filters: { campaign: RUN } },
+			[{ body: { leads: [] } }],
+		);
+		assert.equal(calls[0].qs.campaign, RUN);
+	});
+
+	it('refuses a malformed ID instead of returning every lead', async () => {
+		const transport = createTransport([]);
+		const context = executeContext({
+			params: {
+				resource: 'lead',
+				operation: 'getAll',
+				leadSearchRunId: locatorValue('not-a-run'),
+				returnAll: true,
+				simplify: true,
+				filters: {},
+			},
+			transport,
+		});
+		await assert.rejects(node.execute.call(context), /is not a lead search ID/);
+		assert.equal(transport.calls.length, 0);
+	});
+
+	it('exports only that lead search too', async () => {
+		const { calls } = await run(
+			{
+				resource: 'lead',
+				operation: 'export',
+				leadSearchRunId: locatorValue(RUN),
+				format: 'json',
+				binaryPropertyName: 'data',
+				filters: {},
+			},
+			[{ body: Buffer.from('[]'), headers: { 'content-type': 'application/json' } }],
+		);
+		assert.equal(calls[0].url, `${BASE}/api/leads/export`);
+		assert.equal(calls[0].qs.campaign, RUN);
+	});
+
+	it('lists lead searches that saved leads, with their counts', async () => {
+		const transport = createTransport([
+			{
+				body: {
+					leads: [lead(1)],
+					campaigns: [
+						{ id: RUN, label: 'DTC skincare, UK', count: 24, created_at: '2026-11-10T09:30:00Z' },
+						{ id: 'run-2', label: 'Dentists in Austin', count: 1, created_at: null },
+					],
+				},
+			},
+		]);
+		const result = await listSearch.searchLeadSearchRuns.call(loadContext({ transport }), 'skincare');
+		assert.equal(transport.calls[0].qs.limit, 1);
+		assert.deepEqual(result.results, [{ name: 'DTC skincare, UK · 24 leads · 2026-11-10 09:30', value: RUN }]);
+	});
+
+	it('shows the picker on new nodes and the old field only on version 1', () => {
+		const props = node.description.properties;
+		const picker = props.find((p) => p.name === 'leadSearchRunId');
+		assert.deepEqual(picker.displayOptions.show['@version'], [{ _cnd: { gte: 1.1 } }]);
+		const filters = props.find((p) => p.name === 'filters' && p.displayOptions.show.resource?.includes('lead'));
+		const legacy = filters.options.find((o) => o.name === 'campaign');
+		assert.deepEqual(legacy.displayOptions.show['@version'], [1]);
+		assert.equal(node.description.defaultVersion, 1.1);
+	});
+});
+
+describe('current API, November 2026', () => {
+	const RUN = '5f6a7b8c-9d0e-4f12-a3b4-c5d6e7f8a9b0';
+	const { requiredPermission } = require('../dist/nodes/ManyPi/shared/transport.js');
+
+	it('names the permission the key builder offers today', () => {
+		assert.equal(requiredPermission('GET', '/api/outreach/replies'), 'Inboxes & replies: Read');
+		assert.equal(requiredPermission('GET', '/api/outreach/campaigns'), 'Campaigns: Read');
+		assert.equal(requiredPermission('PATCH', '/api/outreach/campaigns'), 'Campaigns: Read & write');
+		assert.equal(requiredPermission('POST', `/api/outreach/campaigns/${RUN}/launch`), 'Send outreach');
+		assert.equal(requiredPermission('POST', '/api/outreach/enroll'), 'Send outreach');
+		assert.equal(requiredPermission('GET', '/api/agents/runs'), 'Agents & skills: Read');
+		assert.equal(requiredPermission('POST', '/api/agents/runs'), 'Run agents');
+		assert.equal(requiredPermission('POST', '/api/leads/validate'), 'Verify email addresses');
+		assert.equal(requiredPermission('GET', '/api/leads/validate'), 'Leads & companies: Read');
+		assert.equal(requiredPermission('GET', '/api/s1/data/r1'), 'Scrapers & data: Read');
+		assert.equal(requiredPermission('GET', '/api/forms/f1/responses'), 'Forms & pages: Read');
+		assert.equal(requiredPermission('GET', '/api/user'), 'Account & usage: Read');
+		assert.equal(requiredPermission('POST', '/api/scrape/s1'), 'Run scrapers');
+	});
+
+	it('names the permission when a route refuses the key with a 403', async () => {
+		await assert.rejects(
+			run({ resource: 'scraperRun', operation: 'get', runId: locatorValue('r1') }, [
+				{ statusCode: 403, body: { success: false, error: 'This API key does not have permission for this request.' } },
+			]),
+			(error) =>
+				error instanceof NodeApiError &&
+				error.message === 'The API key does not have permission for this' &&
+				error.description.includes('"Scrapers & data: Read"'),
+		);
+	});
+
+	it('refuses a brand ID where ManyPI only honours "all"', async () => {
+		const transport = createTransport([]);
+		const context = executeContext({
+			params: { resource: 'campaign', operation: 'getAll', returnAll: true, filters: { brand: RUN } },
+			transport,
+		});
+		await assert.rejects(node.execute.call(context), /cannot narrow this to one brand/);
+		assert.equal(transport.calls.length, 0);
+
+		const { calls } = await run(
+			{ resource: 'campaign', operation: 'getAll', returnAll: true, filters: { brand: 'all' } },
+			[{ body: { campaigns: [] } }],
+		);
+		assert.equal(calls[0].qs.brand, 'all');
+	});
+
+	it('still narrows leads to one brand by ID', async () => {
+		const { calls } = await run(
+			{ resource: 'lead', operation: 'getAll', returnAll: true, simplify: true, filters: { brand: RUN } },
+			[{ body: { leads: [] } }],
+		);
+		assert.equal(calls[0].qs.brand, RUN);
+	});
+
+	it('launches a campaign, and lists what is missing when it cannot', async () => {
+		const { output, calls } = await run(
+			{ resource: 'campaign', operation: 'launch', campaignId: locatorValue('c1') },
+			[{ body: { ok: true, campaign: { id: 'c1', status: 'active' } } }],
+		);
+		assert.equal(calls[0].method, 'POST');
+		assert.equal(calls[0].url, `${BASE}/api/outreach/campaigns/c1/launch`);
+		assert.equal(output[0].json.status, 'active');
+
+		await assert.rejects(
+			run({ resource: 'campaign', operation: 'launch', campaignId: locatorValue('c1') }, [
+				{
+					statusCode: 409,
+					body: {
+						error: 'This campaign is not ready to launch.',
+						issues: [
+							{ field: 'sequence', message: 'Pick a sequence.', tab: 'editor' },
+							{ field: 'inbox', message: 'Connect an inbox.', tab: 'settings' },
+						],
+					},
+				},
+			]),
+			(error) => /Pick a sequence\. Connect an inbox\./.test(error.message),
+		);
+	});
+
+	it('reads a campaign in any brand and keeps everything the route reports', async () => {
+		const { output, calls } = await run(
+			{ resource: 'campaign', operation: 'get', campaignId: locatorValue('c1') },
+			[{ body: { campaign: { id: 'c1', name: 'Q4' }, stats: { sent: 3 }, capacity: { left: 40 }, funnel: [1] } }],
+		);
+		assert.equal(calls[0].qs.brand, 'all');
+		assert.equal(output[0].json.name, 'Q4');
+		assert.deepEqual(output[0].json.capacity, { left: 40 });
+		assert.deepEqual(output[0].json.funnel, [1]);
+	});
+
+	it('sends schedule changes on campaign update', async () => {
+		const { calls } = await run(
+			{
+				resource: 'campaign',
+				operation: 'update',
+				campaignId: locatorValue('c1'),
+				updateFields: { sendFrom: '08:00', timezone: 'Europe/Berlin', stopOnReply: false },
+			},
+			[{ body: { campaign: { id: 'c1' } } }],
+		);
+		assert.deepEqual(calls[0].body, {
+			id: 'c1',
+			send_from: '08:00',
+			timezone: 'Europe/Berlin',
+			stop_on_reply: false,
+		});
+	});
+
+	it('finds a suppressed address with an underscore before removing it', async () => {
+		const { output, calls } = await run(
+			{ resource: 'suppression', operation: 'remove', email: 'john_doe@example.com' },
+			[{ body: { suppressions: [{ email: 'john_doe@example.com' }] } }, { body: { ok: true } }],
+		);
+		assert.equal(calls[0].qs.q, 'doe@example.com');
+		assert.equal(calls[1].method, 'DELETE');
+		assert.equal(output[0].json.removed, true);
+	});
+
+	it('refuses an 11-email sequence instead of losing the last one', async () => {
+		const step = { subject: 'Hi', bodyHtml: '<p>Hi</p>', waitDays: 2, threadMode: 'new' };
+		const transport = createTransport([]);
+		const context = executeContext({
+			params: { resource: 'sequence', operation: 'create', name: 'Long', steps: { step: Array(11).fill(step) } },
+			transport,
+		});
+		await assert.rejects(node.execute.call(context), /at most 10 steps/);
+		assert.equal(transport.calls.length, 0);
+	});
+
+	it('refuses more than 5,000 addresses across both verification lists', async () => {
+		const transport = createTransport([]);
+		const context = executeContext({
+			params: {
+				resource: 'emailVerification',
+				operation: 'verify',
+				leadIds: Array.from({ length: 3000 }, (_, n) => `l${n}`).join(','),
+				emails: Array.from({ length: 2001 }, (_, n) => `e${n}@example.com`).join(','),
+			},
+			transport,
+		});
+		await assert.rejects(node.execute.call(context), /together/);
+		assert.equal(transport.calls.length, 0);
+	});
+
+	it('sends the delivery mode with a reply, but not with an interrupt', async () => {
+		const { calls } = await run(
+			{ resource: 'agentRun', operation: 'reply', agentRunId: locatorValue('r1'), message: 'Only EU', interrupt: false, mode: 'now' },
+			[{ body: { status: 'interjected' } }],
+		);
+		assert.deepEqual(calls[0].body, { message: 'Only EU', interrupt: false, mode: 'now' });
+		const second = await run(
+			{ resource: 'agentRun', operation: 'reply', agentRunId: locatorValue('r1'), message: 'Restart', interrupt: true, mode: 'now' },
+			[{ body: { status: 'queued' } }],
+		);
+		assert.deepEqual(second.calls[0].body, { message: 'Restart', interrupt: true });
+	});
+
+	it('says so when a cancel or delete did not touch a run of a teammate', async () => {
+		await assert.rejects(
+			run({ resource: 'agentRun', operation: 'cancel', agentRunId: locatorValue('r1') }, [
+				{ body: { id: 'r1', status: 'running' } },
+				{ body: { ok: true } },
+				{ body: { id: 'r1', status: 'running' } },
+			]),
+			/did not cancel this run/,
+		);
+		await assert.rejects(
+			run({ resource: 'agentRun', operation: 'delete', agentRunId: locatorValue('r1') }, [
+				{ body: { id: 'r1' } },
+				{ body: { ok: true } },
+				{ body: { id: 'r1' } },
+			]),
+			/did not delete this run/,
+		);
+		const { output } = await run({ resource: 'agentRun', operation: 'delete', agentRunId: locatorValue('r1') }, [
+			{ body: { id: 'r1' } },
+			{ body: { ok: true } },
+			{ statusCode: 404, body: { error: 'Not found' } },
+		]);
+		assert.deepEqual(output[0].json, { deleted: true });
+	});
+
+	it('puts the number of leads where ManyPI reads it', async () => {
+		const { calls } = await run(
+			{
+				resource: 'leadSearch',
+				operation: 'start',
+				description: 'Dentists in Austin',
+				savedSearchId: locatorValue(''),
+				seedLeadIds: '',
+				criteria: { count: 40 },
+				options: {},
+				waitForCompletion: false,
+			},
+			[{ body: { run_id: RUN, status: 'queued', count: 40 } }],
+		);
+		assert.equal(calls[0].body.criteria.description, 'Find 40 leads. Dentists in Austin');
+	});
+
+	it('returns the run ID and status at once, or waits for the search to finish', { timeout: 20000 }, async () => {
+		const quick = await run(
+			{ resource: 'leadSearch', operation: 'start', description: 'Dentists', savedSearchId: locatorValue(''), seedLeadIds: '', criteria: {}, options: {}, waitForCompletion: false },
+			[{ body: { run_id: RUN, status: 'queued' } }],
+		);
+		assert.equal(quick.output[0].json.runId, RUN);
+		assert.equal(quick.output[0].json.status, 'queued');
+
+		const waited = await run(
+			{ resource: 'leadSearch', operation: 'start', description: 'Dentists', savedSearchId: locatorValue(''), seedLeadIds: '', criteria: {}, options: {}, waitForCompletion: true, maxWaitMinutes: 5 },
+			[
+				{ body: { run_id: RUN, status: 'queued' } },
+				{ body: { id: RUN, status: 'completed', leads_kept: 18, leads_with_email: 15, target_lead_count: 20, result_summary: 'Found 18' } },
+			],
+		);
+		const json = waited.output[0].json;
+		assert.equal(waited.calls[1].url, `${BASE}/api/agents/runs/${RUN}`);
+		assert.equal(json.status, 'completed');
+		assert.equal(json.done, true);
+		assert.equal(json.leadsSaved, 18);
+		assert.equal(json.waitTimedOut, false);
+	});
+
+	it('reports the status of a lead search', async () => {
+		const { output } = await run(
+			{ resource: 'leadSearch', operation: 'getStatus', leadSearchRunId: locatorValue(RUN) },
+			[{ body: { id: RUN, status: 'paused', leads_kept: 0 } }],
+		);
+		assert.equal(output[0].json.status, 'paused');
+		assert.equal(output[0].json.waitingForAnswer, true);
+		assert.equal(output[0].json.done, false);
+	});
+
+	it('keeps seed leads and other stored criteria when a saved search is updated', async () => {
+		const { calls } = await run(
+			{ resource: 'leadSearch', operation: 'upsert', savedSearchId: locatorValue('p1'), description: 'Dentists', criteria: {}, options: {} },
+			[
+				{ body: { profiles: [{ id: 'p1', name: 'Similar', kind: 'similar', criteria: { description: 'old', similar_to: { leads: [{ id: 'a' }] } } }] } },
+				{ body: { profile: { id: 'p1' } } },
+			],
+		);
+		assert.deepEqual(calls[1].body.criteria.similar_to, { leads: [{ id: 'a' }] });
+		assert.equal(calls[1].body.criteria.description, 'Dentists');
+	});
+
+	it('names imports, and keeps single upserts out of the import list', async () => {
+		const imported = await run(
+			{ resource: 'lead', operation: 'import', leads: '[{"email":"a@example.com"}]', importOptions: {} },
+			[{ body: { created: 1 } }],
+		);
+		assert.equal(imported.calls[0].body.source, 'api');
+		assert.equal(imported.calls[0].body.label, 'n8n');
+		const upserted = await run(
+			{ resource: 'lead', operation: 'upsert', email: '', additionalFields: { domain: 'acme.com' }, options: {} },
+			[{ body: { created: 1, rowLeadIds: ['l1'] } }],
+		);
+		assert.equal(upserted.calls[0].body.source, 'manual');
+		assert.equal(upserted.output[0].json.result, 'created');
+	});
+
+	it('reads form responses with each answer as a field, leaving test responses out', async () => {
+		const { output, calls } = await run(
+			{ resource: 'form', operation: 'getResponses', formId: locatorValue('demo-request'), returnAll: true, responseFilters: {} },
+			[
+				{
+					body: {
+						responses: [
+							{ id: 'r1', is_test: false, email: 'jane@acme.com', answers: [{ ref: 'team_size', label: 'Team?', text: '11 to 50' }] },
+							{ id: 'r2', is_test: true, answers: [] },
+						],
+						total: 2,
+					},
+				},
+			],
+		);
+		assert.equal(calls[0].url, `${BASE}/api/forms/demo-request/responses`);
+		assert.equal(calls[0].qs.status, 'completed');
+		assert.equal(output.length, 1);
+		assert.equal(output[0].json.fields.team_size, '11 to 50');
+	});
+
+	it('closes and reopens a form', async () => {
+		const { calls } = await run(
+			{ resource: 'form', operation: 'close', formId: locatorValue('f1') },
+			[{ body: { ok: true, status: 'closed' } }],
+		);
+		assert.deepEqual(calls[0].body, { open: false });
+		const reopened = await run(
+			{ resource: 'form', operation: 'reopen', formId: locatorValue('f1') },
+			[{ body: { ok: true, status: 'live' } }],
+		);
+		assert.deepEqual(reopened.calls[0].body, { open: true });
+	});
+});
+
+describe('trigger, new events', () => {
+	const trigger = new ManyPiTrigger();
+	const poll = (params, responses, staticData) => {
+		const transport = createTransport(responses);
+		return trigger.poll
+			.call(pollContext({ params, transport, staticData }))
+			.then((result) => ({ result, calls: transport.calls }));
+	};
+
+	it('fires once when a form is submitted, after noting the backlog', async () => {
+		const staticData = {};
+		const params = { event: 'formResponse', formId: locatorValue('f1'), formOptions: {} };
+		const first = await poll(params, [{ body: { responses: [{ id: 'old', answers: [] }] } }], staticData);
+		assert.equal(first.result, null);
+		assert.equal(first.calls[0].qs.status, 'completed');
+		const second = await poll(
+			params,
+			[{ body: { responses: [{ id: 'new', answers: [{ ref: 'email', text: 'a@b.co' }] }, { id: 'old', answers: [] }] } }],
+			staticData,
+		);
+		assert.equal(second.result[0].length, 1);
+		assert.equal(second.result[0][0].json.fields.email, 'a@b.co');
+	});
+
+	it('fires when a lead search completes, and ignores other runs', async () => {
+		const staticData = {};
+		const params = { event: 'leadSearch', statuses: ['completed'], leadSearchRunId: '' };
+		await poll(params, [{ body: [{ id: 'a', status: 'running', target_lead_count: 20, created_at: '2026-11-14T10:00:00Z' }] }], staticData);
+		const { result, calls } = await poll(
+			params,
+			[
+				{
+					body: [
+						{ id: 'a', status: 'completed', target_lead_count: 20, created_at: '2026-11-14T10:00:00Z' },
+						{ id: 'b', status: 'completed', target_lead_count: null, created_at: '2026-11-14T10:01:00Z' },
+					],
+				},
+			],
+			staticData,
+		);
+		assert.equal(calls[0].qs.brand, 'all');
+		assert.equal(result[0].length, 1);
+		assert.equal(result[0][0].json.runId, 'a');
+	});
+
+	it('says so when ManyPI does not mark lead searches yet', async () => {
+		await assert.rejects(
+			poll({ event: 'leadSearch', statuses: ['completed'], leadSearchRunId: '' }, [{ body: [{ id: 'a', status: 'completed' }] }], {}),
+			/did not say which runs are lead searches/,
+		);
 	});
 });

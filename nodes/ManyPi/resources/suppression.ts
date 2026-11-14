@@ -123,7 +123,10 @@ export const suppressionHandlers: ResourceHandlers = {
 			'GET',
 			'/api/outreach/suppressions',
 			undefined,
-			{ q: email, limit: 500 },
+			// ManyPI strips % and _ from the search text, so john_doe@x.com would
+			// be searched as johndoe@x.com and never found. Search with the part
+			// after the last one; the exact comparison below does the rest.
+			{ q: email.split(/[_%]/).pop(), limit: 500 },
 			{ itemIndex: i },
 		);
 		const wasSuppressed = asArray(listed, 'suppressions').some((entry) => {

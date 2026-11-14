@@ -29,10 +29,10 @@ The **ManyPI** node covers the whole ManyPI API, from finding leads to handling 
 | Resource | Operations |
 | --- | --- |
 | Lead | Create or Update, Delete, Delete Many, Export, Get, Get Capacity, Get Many, Import, Update, Update Many |
-| Lead Search | Create or Update, Delete, Get Many, Start |
+| Lead Search | Create or Update, Delete, Get Many, Get Status, Start |
 | Lead Column | Create, Get Many |
 | Email Verification | Get, Get Many, Verify |
-| Campaign | Create, Delete, Enroll Leads, Get, Get Many, Get Stats, Remove Leads, Update |
+| Campaign | Create, Delete, Enroll Leads, Get, Get Many, Get Stats, Launch, Remove Leads, Update |
 | Sequence | Create, Get Many |
 | Email | Draft With AI, Send |
 | Inbox | Get Many |
@@ -43,6 +43,7 @@ The **ManyPI** node covers the whole ManyPI API, from finding leads to handling 
 | Scraper | Get Many, Run |
 | Scraper Run | Get, Get Data, Get Many |
 | Endpoint | Create, Delete, Get, Get Many, Get Result, Invoke |
+| Form | Close, Create, Get, Get Analytics, Get Many, Get Responses, Publish, Reopen |
 | Account | Get |
 
 ## Trigger
@@ -55,6 +56,8 @@ The **ManyPI Trigger** node polls ManyPI and starts a workflow when:
 | New Reply | A campaign gets a human reply, auto-reply or bounce, optionally filtered by campaign and sentiment. |
 | Email Verification Reached Status | An email verification job finishes. |
 | Agent Run Reached Status | An agent run reaches a chosen status. Add Paused to hear when the agent is waiting for an answer. |
+| Lead Search Reached Status | A lead search reaches a chosen status, Completed by default. Optionally only one search, by its run ID. |
+| Form Submitted | Someone submits a ManyPI form. Each answer is also under `fields`, keyed by the question. |
 | New Campaign | A campaign is created. |
 | Scraper Run Reached Status | A scraper run reaches a chosen status. The default is Completed, so the data is ready. |
 
@@ -82,21 +85,31 @@ An OAuth2 connection can do anything your ManyPI account can. Published endpoint
 ### API key
 
 1. Sign in to [app.manypi.com](https://app.manypi.com) and open **API Access** in the profile menu.
-2. Create a key. Every permission is ticked by default. Untick any the workflow will never need:
+2. Create a key. Give each area the workflow uses **Read**, or **Read & write** if it changes records there, and tick the actions it needs:
 
-   | Permission | Needed for |
+   | Area | Covers |
    | --- | --- |
-   | Read | Every Get and Get Many operation, and the trigger |
-   | Write | Creating, updating and deleting scrapers, endpoints, leads, campaigns, sequences and skills |
-   | Run Scrapers | Scraper > Run |
-   | Run Agents | Agent Run > Create, Reply and Cancel, and Lead Search > Start |
-   | Invoke Endpoints | Endpoint > Invoke and Get Result |
-   | Verify Email Addresses | Email Verification > Verify |
-   | Send Outreach | Email > Send and Campaign > Enroll Leads |
+   | Leads & companies | Lead, Lead Column, Lead Search (Start needs Read & write) and Email Verification > Get |
+   | Campaigns | Campaign, Sequence, Suppression and Email > Draft With AI |
+   | Inboxes & replies | Inbox, Reply, and the New Reply trigger |
+   | Agents & skills | Agent Run > Get and Get Many, Skill, Lead Search > Get Status and its wait, and the run triggers |
+   | Forms & pages | Form, and the Form Submitted trigger |
+   | Scrapers & data | Scraper, Scraper Run and Endpoint, apart from running them |
+   | Account & usage | Account > Get, and the test n8n runs when you save the credential |
+
+   | Action | Needed for |
+   | --- | --- |
+   | Run agents | Agent Run > Create, Reply, Cancel and Delete |
+   | Run scrapers | Scraper > Run |
+   | Invoke endpoints | Endpoint > Invoke and Get Result |
+   | Verify email addresses | Email Verification > Verify |
+   | Send outreach | Email > Send, Campaign > Enroll Leads and Campaign > Launch |
+
+   Keys made before November 2026 with the old **Read** and **Write** permissions keep working.
 
 3. In n8n, create a **ManyPI API** credential and paste the key, which starts with `mpi_`.
 
-n8n tests the key when you save the credential. ManyPI answers a key that lacks a permission the same way as a key that does not exist. So when an operation reports that the key was not accepted, the error names the permission that operation needs.
+n8n tests the key when you save the credential, which needs **Account & usage: Read**. ManyPI answers a key that lacks a permission the same way as a key that does not exist. So when an operation reports that the key was not accepted, the error names the permission that operation needs.
 
 ## Compatibility
 
@@ -107,7 +120,9 @@ n8n tests the key when you save the credential. ManyPI answers a key that lacks 
 
 ## Usage
 
-**Background work.** Agent runs, lead searches and email verifications run for minutes, not seconds, so these operations return at once with an ID. Continue in a workflow that starts from the ManyPI Trigger. For example, use Agent Run Reached Status set to Completed.
+**Background work.** Agent runs, lead searches and email verifications run for minutes, not seconds, so these operations return at once with an ID and a `status`. Continue in a workflow that starts from the ManyPI Trigger, for example Lead Search Reached Status set to Completed.
+
+**Waiting for a lead search.** Lead Search > Start returns `runId` and `status` at once. Turn on **Wait for Completion** to hold the workflow until the search finishes, fails, or stops to ask a question, up to **Max Wait**. The output then has `status`, `done`, `waitingForAnswer`, `leadsSaved` and `leadsWithEmail`. Lead Search > Get Status returns the same fields for any run ID. To get the leads, use Lead > Get Many with **Lead Search** set to the run ID.
 
 **Batch limits.** ManyPI caps how much one call can carry. Import takes 100 leads, Update Many and Delete Many take 500, Enroll Leads takes 1,000, and Verify and Suppression > Add take 5,000. The node stops with a message before sending an oversized batch. Put a **Loop Over Items** node in front to split larger lists.
 
@@ -115,9 +130,13 @@ n8n tests the key when you save the credential. ManyPI answers a key that lacks 
 
 **Custom columns.** Custom values are stored under each column's key. A label such as "Tech Stack" is turned into its key, `tech_stack`, before it is sent. A column must exist before a lead can hold a value in it. Declare it with Lead Column > Create, or turn on **Declare Missing Columns**.
 
-**Lead searches.** Lead Search > Start does not save its criteria unless you turn on **Save as Reusable Search**, so a scheduled workflow doesn't pile up saved searches. When you pick a saved search, criteria you set replace only the matching parts of it. If the description names leads the workspace already has, ManyPI returns those leads with `started: false` and runs nothing. Turn on **Search Even If Leads Exist** to search anyway.
+**Lead searches.** **Number of Leads** sets how many leads to find, up to 250. Without it ManyPI finds 20, or 1 when the description names one company. Lead Search > Start does not save its criteria unless you turn on **Save as Reusable Search**, so a scheduled workflow doesn't pile up saved searches. When you pick a saved search, criteria you set replace only the matching parts of it. If the description names leads the workspace already has, ManyPI returns those leads with `started: false` and runs nothing. Turn on **Search Even If Leads Exist** to search anyway.
 
-**Deletes are checked.** Delete operations first confirm the record exists, so a mistyped ID fails instead of reporting a deletion. Agent Run > Cancel reports `cancelled: false` for a run that had already finished. Suppression > Remove reports `removed: false` for an address that was not on the list.
+**Deletes are checked.** Delete operations first confirm the record exists, so a mistyped ID fails instead of reporting a deletion. Agent Run > Cancel reports `cancelled: false` for a run that had already finished. Cancel and Delete fail with a message on a run a teammate started, which only they can change. Suppression > Remove reports `removed: false` for an address that was not on the list.
+
+**Brands.** Lead operations narrow to one brand by its ID. Everywhere else, Brand takes `all` for the whole workspace, or nothing for your current brand, and the node stops on any other value.
+
+**Launching campaigns.** Campaign > Create with a sequence and an inbox starts active. A draft made in ManyPI goes live with Campaign > Launch, which checks it first and lists anything missing.
 
 **Reply sentiment.** Sentiment filters need a plan with reply intelligence. On other plans, ManyPI ignores the filter, so the node stops with a message instead of passing every reply through as if it matched.
 
@@ -131,7 +150,9 @@ n8n tests the key when you save the credential. ManyPI answers a key that lacks 
 
 ## Example workflows
 
-- **Find new leads every week.** Schedule Trigger, then ManyPI (Lead Search > Start, with a saved search). The leads it finds arrive through the ManyPI Trigger's New Lead event.
+- **Find new leads every week.** Schedule Trigger, then ManyPI (Lead Search > Start, with a saved search and **Wait for Completion** on), then ManyPI (Lead > Get Many with **Lead Search** set to `{{ $json.runId }}`), then ManyPI (Campaign > Enroll Leads).
+- **Act when a search finishes.** ManyPI Trigger (Lead Search Reached Status, Completed), then ManyPI (Lead > Get Many with **Lead Search** set to `{{ $json.runId }}`).
+- **Form submissions to your CRM.** ManyPI Trigger (Form Submitted), then HubSpot (Create or Update Contact) mapping `email` and `fields.company`.
 - **Send new leads to your CRM.** ManyPI Trigger (New Lead), then HubSpot (Create or Update Contact) mapping `email`, `full_name` and `company`.
 - **Verify, then enroll, new leads.** ManyPI Trigger (New Lead), then ManyPI (Email Verification > Verify with the lead ID). Then a second workflow: ManyPI Trigger (Email Verification Reached Status), then ManyPI (Campaign > Enroll Leads).
 - **Route positive replies to sales.** ManyPI Trigger (New Reply, Type Human Reply, Sentiment Positive), then Slack (Send Message) to the sales channel, or HubSpot (Create or Update Contact) mapping `from_email` and `from_name`.
@@ -168,6 +189,8 @@ npm run dev     # starts n8n with the node loaded, rebuilding on changes
 See [CHANGELOG.md](CHANGELOG.md) for every release.
 
 The first release contains the ManyPI node with 16 resources and 57 operations, the ManyPI Trigger with 6 events, and API key authentication.
+
+Node version 1.1 moved the lead search filter on Lead > Get Many out of Filters into its own **Lead Search** picker. Workflows built on version 1 keep the old field and keep working.
 
 ## License
 

@@ -82,6 +82,7 @@ export async function searchLeads(
 		q: filter,
 		limit: LEAD_PAGE,
 		offset,
+		meta: '0',
 	})) as IDataObject;
 	const leads = body?.billingLock ? [] : asArray(body, 'leads');
 	const results = leads.map((lead) => {
@@ -97,11 +98,39 @@ export async function searchLeads(
 	};
 }
 
+/**
+ * Lead searches that saved leads, newest first. The leads list answers with
+ * them under `campaigns` (each run's label, saved-lead count and start time),
+ * so one small request gives the picker exactly the runs that have leads to
+ * fetch. A search still running with nothing saved yet is not listed; its run
+ * ID can still be entered by hand.
+ */
+export async function searchLeadSearchRuns(
+	this: ILoadOptionsFunctions,
+	filter?: string,
+): Promise<INodeListSearchResult> {
+	const body = (await manyPiApiRequest.call(this, 'GET', '/api/leads', undefined, {
+		limit: 1,
+	})) as IDataObject;
+	const runs = body?.billingLock ? [] : asArray(body, 'campaigns');
+	return matching(runs, filter, (run) => {
+		const count = Number(run.count ?? 0);
+		const when = shortDate(run.created_at);
+		return {
+			name: `${String(run.label ?? run.id)} · ${count} ${count === 1 ? 'lead' : 'leads'}${when ? ` · ${when}` : ''}`,
+			value: String(run.id),
+		};
+	});
+}
+
 export async function searchCampaigns(
 	this: ILoadOptionsFunctions,
 	filter?: string,
 ): Promise<INodeListSearchResult> {
-	const body = await manyPiApiRequest.call(this, 'GET', '/api/outreach/campaigns');
+	// view=names skips the per-campaign stats, which read every send and reply.
+	const body = await manyPiApiRequest.call(this, 'GET', '/api/outreach/campaigns', undefined, {
+		view: 'names',
+	});
 	return matching(asArray(body, 'campaigns'), filter, (campaign) => ({
 		name: `${campaign.name ?? campaign.id} (${campaign.status})`,
 		value: String(campaign.id),
@@ -152,6 +181,18 @@ export async function searchEndpointSlugs(
 	return matching(asArray(body), filter, (endpoint) => ({
 		name: `${endpoint.name ?? endpoint.slug} (/${endpoint.slug})`,
 		value: String(endpoint.slug),
+	}));
+}
+
+export async function searchForms(
+	this: ILoadOptionsFunctions,
+	filter?: string,
+): Promise<INodeListSearchResult> {
+	const body = await manyPiApiRequest.call(this, 'GET', '/api/forms');
+	return matching(asArray(body, 'forms'), filter, (form) => ({
+		name: `${String(form.name ?? form.key ?? form.id)} (${form.status})`,
+		value: String(form.id),
+		url: typeof form.url === 'string' ? form.url : undefined,
 	}));
 }
 

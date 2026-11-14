@@ -4,7 +4,7 @@ import {
 	LEAD_FILTER_STATUS_OPTIONS,
 	LEAD_SIMPLE_KEYS,
 	LEAD_STATUS_OPTIONS,
-	brandOption,
+	leadBrandOption,
 	locator,
 	returnAllAndLimit,
 	showFor,
@@ -304,6 +304,13 @@ export const leadDescription: INodeProperties[] = [
 				description:
 					'Labels of custom columns to create before importing, separated by commas. Values for undeclared columns are dropped.',
 			},
+			{
+				displayName: 'Import Name',
+				name: 'batchName',
+				type: 'string',
+				default: 'n8n',
+				description: 'What this import is called in the ManyPI import list',
+			},
 			onDuplicateOption,
 		],
 	},
@@ -368,6 +375,22 @@ export const leadDescription: INodeProperties[] = [
 	leadIdsParameter('deleteMany', 'Up to 500 lead IDs to delete permanently, separated by commas'),
 
 	// ── Get Many ──────────────────────────────────────────────────────────────
+	{
+		...locator({
+			displayName: 'Lead Search',
+			name: 'leadSearchRunId',
+			noun: 'lead search',
+			searchListMethod: 'searchLeadSearchRuns',
+			show: showFor(RESOURCE, ['getAll', 'export']),
+			required: false,
+			description:
+				'Only the leads one lead search found. Pick it from the list, or enter its run ID, such as the run_id that Lead Search > Start returns. Leave empty for all leads.',
+		}),
+		// Version 1 kept this under Filters as "Lead Search ID".
+		displayOptions: {
+			show: { ...showFor(RESOURCE, ['getAll', 'export']), '@version': [{ _cnd: { gte: 1.1 } }] },
+		},
+	},
 	...returnAllAndLimit(showFor(RESOURCE, 'getAll')),
 	simplifyField(showFor(RESOURCE, 'getAll')),
 	{
@@ -378,15 +401,18 @@ export const leadDescription: INodeProperties[] = [
 		default: {},
 		displayOptions: { show: showFor(RESOURCE, ['getAll', 'export']) },
 		options: [
-			{ ...brandOption, displayOptions: { show: { '/operation': ['getAll'] } } },
+			{ ...leadBrandOption, displayOptions: { show: { '/operation': ['getAll'] } } },
 			{
+				// Version 1 only. Kept so saved workflows keep their filter: n8n drops
+				// a collection value whose option is gone, and the node would then
+				// return every lead in the workspace.
 				displayName: 'Lead Search ID',
 				name: 'campaign',
 				type: 'string',
 				default: '',
 				placeholder: 'e.g. 5f6a7b8c-9d0e-4f12-a3b4-c5d6e7f8a9b0',
 				description: 'Only return leads found by this lead search, using its run ID',
-				displayOptions: { show: { '/operation': ['getAll'] } },
+				displayOptions: { show: { '/operation': ['getAll'], '@version': [1] } },
 			},
 			{
 				displayName: 'Search',
@@ -432,6 +458,30 @@ export const leadDescription: INodeProperties[] = [
 
 function leadId(this: IExecuteFunctions, i: number): string {
 	return this.getNodeParameter('leadId', i, '', { extractValue: true }) as string;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The lead search (agent run) to narrow to, from the picker or, on version 1
+ * nodes, the old Filters field. ManyPI's list and export routes take it as
+ * `campaign`, matched against the run that saved each lead.
+ *
+ * Checked here because ManyPI ignores a malformed ID rather than refusing it,
+ * so a typo would quietly return every lead in the workspace.
+ */
+function leadSearchRunId(this: IExecuteFunctions, i: number, filters: IDataObject): string | undefined {
+	const picked = this.getNodeParameter('leadSearchRunId', i, '', { extractValue: true });
+	const raw = String((picked || filters.campaign) ?? '').trim();
+	if (!raw) return undefined;
+	if (!UUID_RE.test(raw)) {
+		throw new NodeOperationError(this.getNode(), `"${raw}" is not a lead search ID`, {
+			itemIndex: i,
+			description:
+				'Use the run_id that Lead Search > Start returns, or pick the lead search from the list. It looks like 5f6a7b8c-9d0e-4f12-a3b4-c5d6e7f8a9b0.',
+		});
+	}
+	return raw;
 }
 
 /**
@@ -498,11 +548,12 @@ export const leadHandlers: ResourceHandlers = {
 		row.custom = custom;
 		const lead = prune(row);
 
-		if (!lead.email && !(lead.domain && (lead.full_name || lead.company))) {
+		// ManyPI's own rule: a lead needs at least one of these to be saved.
+		if (!lead.email && !lead.domain && !lead.full_name && !lead.company) {
 			throw new NodeOperationError(this.getNode(), 'The lead has nothing to match it on', {
 				itemIndex: i,
 				description:
-					'Enter an Email, or add Domain plus Full Name or Company under Additional Fields.',
+					'Enter an Email, or add a Domain, Full Name or Company under Additional Fields.',
 			});
 		}
 
@@ -518,6 +569,9 @@ export const leadHandlers: ResourceHandlers = {
 				rows: [lead],
 				duplicates: options.duplicates,
 				declare_fields: declareFields,
+				// One lead per call. As "manual" it is not listed as an import of
+				// its own, so a busy workflow does not bury the real imports.
+				source: 'manual',
 			}),
 			undefined,
 			{ itemIndex: i },
@@ -566,7 +620,13 @@ export const leadHandlers: ResourceHandlers = {
 			this,
 			'POST',
 			'/api/leads/import',
-			prune({ rows, duplicates: options.duplicates, declare_fields: declareFields }),
+			prune({
+				rows,
+				duplicates: options.duplicates,
+				declare_fields: declareFields,
+				source: 'api',
+				label: (options.batchName as string | undefined) || 'n8n',
+			}),
 			undefined,
 			{ itemIndex: i },
 		)) as IDataObject;
@@ -599,8 +659,11 @@ export const leadHandlers: ResourceHandlers = {
 			qs: {
 				q: filters.q,
 				status: filters.status,
-				campaign: filters.campaign,
+				campaign: leadSearchRunId.call(this, i, filters),
 				brand: filters.brand,
+				// Rows only. The node reads nothing else, and this skips the
+				// workspace-wide lists ManyPI otherwise builds for every page.
+				meta: '0',
 			},
 			key: 'leads',
 			pageSize: 500,
@@ -704,7 +767,12 @@ export const leadHandlers: ResourceHandlers = {
 			'GET',
 			'/api/leads/export',
 			undefined,
-			{ status: filters.status, q: filters.q, format },
+			{
+				status: filters.status,
+				q: filters.q,
+				campaign: leadSearchRunId.call(this, i, filters),
+				format,
+			},
 			{ itemIndex: i, binary: true },
 		);
 		const buffer = Buffer.from(response.body as ArrayBuffer);
